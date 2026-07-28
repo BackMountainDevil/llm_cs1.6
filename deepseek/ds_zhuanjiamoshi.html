@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0, shrink-to-fit=no">
+  <title>网页版CS1.6 · 经典射击</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: #0a0f1a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', 'Arial', sans-serif;
+      padding: 20px;
+      margin: 0;
+    }
+    .game-container {
+      background: #1a1e2b;
+      border-radius: 32px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.7), 0 0 0 2px #3a4a5a;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-width: 1000px;
+      border-radius: 16px;
+      box-shadow: inset 0 0 30px rgba(0,0,0,0.8), 0 10px 25px black;
+      background: radial-gradient(circle at 20% 30%, #2d3b4a, #141b24);
+    }
+    .hud {
+      width: 100%;
+      margin-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #d4dce8;
+      font-weight: bold;
+      font-size: 1.2rem;
+      background: #0d121c;
+      padding: 10px 25px;
+      border-radius: 60px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.6);
+      letter-spacing: 0.5px;
+      flex-wrap: wrap;
+    }
+    .stats {
+      display: flex;
+      gap: 30px;
+      background: #1f2a36;
+      padding: 8px 25px;
+      border-radius: 40px;
+    }
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .label {
+      color: #8e9baf;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+    }
+    .value {
+      color: #f0c45a;
+      font-size: 1.5rem;
+      font-weight: 800;
+      text-shadow: 0 0 8px #ffb347;
+    }
+    .controls {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+    button {
+      background: #2f3b4c;
+      border: none;
+      color: white;
+      font-weight: bold;
+      padding: 10px 24px;
+      border-radius: 30px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      letter-spacing: 0.8px;
+      background: #3e4d5e;
+      box-shadow: 0 4px 0 #1e262f;
+      border: 1px solid #5d6f82;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    button:hover {
+      background: #4f6177;
+      box-shadow: 0 6px 0 #1e262f;
+      transform: translateY(-1px);
+    }
+    button:active {
+      transform: translateY(2px);
+      box-shadow: 0 2px 0 #1e262f;
+    }
+    .crosshair-indicator {
+      color: #c0cbd9;
+      margin-left: 5px;
+    }
+    @media (max-width: 700px) {
+      .hud {
+        flex-direction: column;
+        gap: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+<div style="display: flex; flex-direction: column; align-items: center;">
+  <div class="game-container">
+    <canvas id="gameCanvas" width="900" height="500" aria-label="CS1.6网页射击游戏"></canvas>
+    <div class="hud">
+      <div class="stats">
+        <div class="stat"><span class="label">❤️ 生命</span> <span class="value" id="healthDisplay">100</span></div>
+        <div class="stat"><span class="label">🎯 击杀</span> <span class="value" id="killsDisplay">0</span></div>
+        <div class="stat"><span class="label">🔫 弹药</span> <span class="value" id="ammoDisplay">30</span></div>
+      </div>
+      <div class="controls">
+        <button id="restartButton"><span>↺</span> 新对局</button>
+        <span class="crosshair-indicator">🎯 鼠标瞄准 | 左键开火</span>
+      </div>
+    </div>
+  </div>
+  <div style="color:#6a788b; margin-top: 12px; font-size: 0.9rem;">
+    WASD 移动 | 鼠标控制准星 | 点击左键射击敌人
+  </div>
+</div>
+
+<script>
+  (function() {
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // 显示元素
+    const healthSpan = document.getElementById('healthDisplay');
+    const killsSpan = document.getElementById('killsDisplay');
+    const ammoSpan = document.getElementById('ammoDisplay');
+
+    // ---------- 固定尺寸 ----------
+    const W = canvas.width = 900;
+    const H = canvas.height = 500;
+
+    // ---------- 游戏状态 ----------
+    let player = {
+      x: W / 2,
+      y: H / 2,
+      radius: 16,        // 玩家碰撞半径
+      health: 100,
+      maxHealth: 100
+    };
+
+    let ammo = 30;
+    const maxAmmo = 30;
+    let kills = 0;
+    let gameOver = false;
+    let gameWin = false;   // 是否胜利（击杀足够多）
+
+    // 敌人数组
+    let enemies = [];
+
+    // 子弹数组
+    let bullets = [];
+
+    // 鼠标坐标 (用于瞄准方向)
+    let mouseX = player.x + 30;
+    let mouseY = player.y;
+
+    // 移动状态 (WASD)
+    const keys = {
+      w: false,
+      a: false,
+      s: false,
+      d: false
+    };
+
+    // 射击冷却
+    const shootCooldownMax = 15;  // 帧数间隔
+    let shootCooldown = 0;
+
+    // 敌人参数
+    const ENEMY_SPEED = 1.25;
+    const ENEMY_RADIUS = 18;
+    const ENEMY_DAMAGE = 12;      // 碰到玩家时伤害
+    const SPAWN_DELAY = 45;       // 帧数间隔生成敌人
+    let spawnTimer = 0;
+
+    // 最大敌人数
+    const MAX_ENEMIES = 8;
+    // 胜利所需击杀数
+    const WIN_KILLS = 15;
+
+    // 玩家移动速度
+    const PLAYER_SPEED = 3.8;
+
+    // ---------- 辅助函数：重置游戏 ----------
+    function restartGame() {
+      player = {
+        x: W / 2,
+        y: H / 2,
+        radius: 16,
+        health: 100,
+        maxHealth: 100
+      };
+      ammo = maxAmmo;
+      kills = 0;
+      gameOver = false;
+      gameWin = false;
+      enemies = [];
+      bullets = [];
+      shootCooldown = 0;
+      spawnTimer = 0;
+      mouseX = player.x + 30;
+      mouseY = player.y;
+    }
+
+    // 生成敌人 (在屏幕边缘附近随机出现)
+    function spawnEnemy() {
+      if (enemies.length >= MAX_ENEMIES) return;
+
+      let side = Math.floor(Math.random() * 4); // 0:左,1:右,2:上,3:下
+      let x, y;
+      const padding = 40;
+      switch (side) {
+        case 0: // 左边缘
+          x = -padding;
+          y = Math.random() * H;
+          break;
+        case 1: // 右边缘
+          x = W + padding;
+          y = Math.random() * H;
+          break;
+        case 2: // 上边缘
+          x = Math.random() * W;
+          y = -padding;
+          break;
+        case 3: // 下边缘
+          x = Math.random() * W;
+          y = H + padding;
+          break;
+        default:
+          x = -30;
+          y = H/2;
+      }
+
+      enemies.push({
+        x: x,
+        y: y,
+        radius: ENEMY_RADIUS,
+        health: 35,       // 敌人生命值，需要多枪
+        maxHealth: 35
+      });
+    }
+
+    // 玩家受到伤害
+    function damagePlayer(amount) {
+      if (gameOver || gameWin) return;
+      player.health = Math.max(0, player.health - amount);
+      if (player.health <= 0) {
+        gameOver = true;
+        player.health = 0;
+      }
+    }
+
+    // 射击逻辑
+    function shootBullet() {
+      if (gameOver || gameWin) return;
+      if (ammo <= 0) return;
+      if (shootCooldown > 0) return;
+
+      // 计算从玩家指向鼠标的方向
+      let dx = mouseX - player.x;
+      let dy = mouseY - player.y;
+      let length = Math.sqrt(dx * dx + dy * dy);
+      if (length < 0.001) {
+        dx = 1;
+        dy = 0;
+        length = 1;
+      }
+      let dirX = dx / length;
+      let dirY = dy / length;
+
+      bullets.push({
+        x: player.x + dirX * (player.radius + 2),
+        y: player.y + dirY * (player.radius + 2),
+        vx: dirX * 7.5,
+        vy: dirY * 7.5,
+        radius: 4,
+        active: true
+      });
+
+      ammo--;
+      shootCooldown = shootCooldownMax;
+
+      // 更新UI
+      updateUI();
+    }
+
+    // 更新UI文字
+    function updateUI() {
+      healthSpan.textContent = player.health;
+      killsSpan.textContent = kills;
+      ammoSpan.textContent = ammo;
+    }
+
+    // 边界限制 (防止玩家出画布)
+    function clampPlayer() {
+      player.x = Math.max(player.radius, Math.min(W - player.radius, player.x));
+      player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
+    }
+
+    // 检查胜利条件
+    function checkWinCondition() {
+      if (!gameWin && !gameOver && kills >= WIN_KILLS) {
+        gameWin = true;
+      }
+    }
+
+    // ---------- 游戏更新逻辑 ----------
+    function update() {
+      if (gameOver || gameWin) {
+        // 游戏结束或胜利时不更新移动/敌人逻辑，但仍可重绘
+        return;
+      }
+
+      // ----- 移动玩家 -----
+      let moveX = 0, moveY = 0;
+      if (keys.w) moveY -= 1;
+      if (keys.s) moveY += 1;
+      if (keys.a) moveX -= 1;
+      if (keys.d) moveX += 1;
+
+      if (moveX !== 0 || moveY !== 0) {
+        let len = Math.sqrt(moveX * moveX + moveY * moveY);
+        moveX = (moveX / len) * PLAYER_SPEED;
+        moveY = (moveY / len) * PLAYER_SPEED;
+        player.x += moveX;
+        player.y += moveY;
+        clampPlayer();
+      }
+
+      // ----- 射击冷却更新 -----
+      if (shootCooldown > 0) {
+        shootCooldown--;
+      }
+
+      // ----- 敌人移动 (向玩家靠近) -----
+      for (let enemy of enemies) {
+        let dx = player.x - enemy.x;
+        let dy = player.y - enemy.y;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 0.5) {
+          let normX = dx / dist;
+          let normY = dy / dist;
+          enemy.x += normX * ENEMY_SPEED;
+          enemy.y += normY * ENEMY_SPEED;
+        }
+      }
+
+      // ----- 敌人与玩家碰撞检测 (伤害) -----
+      for (let enemy of enemies) {
+        let dx = player.x - enemy.x;
+        let dy = player.y - enemy.y;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < player.radius + enemy.radius) {
+          // 造成伤害并推开敌人避免无限连击
+          damagePlayer(ENEMY_DAMAGE);
+          // 推开敌人
+          let angle = Math.atan2(dy, dx);
+          let overlap = player.radius + enemy.radius - dist;
+          if (overlap > 0) {
+            enemy.x -= Math.cos(angle) * (overlap + 2);
+            enemy.y -= Math.sin(angle) * (overlap + 2);
+          }
+          // 边界限制敌人
+          enemy.x = Math.max(-20, Math.min(W+20, enemy.x));
+          enemy.y = Math.max(-20, Math.min(H+20, enemy.y));
+        }
+      }
+
+      // ----- 子弹移动与碰撞 -----
+      for (let i = bullets.length-1; i >= 0; i--) {
+        let b = bullets[i];
+        b.x += b.vx;
+        b.y += b.vy;
+
+        // 边界消除
+        if (b.x < -20 || b.x > W+20 || b.y < -20 || b.y > H+20) {
+          bullets.splice(i,1);
+          continue;
+        }
+
+        let bulletHit = false;
+
+        // 子弹与敌人碰撞
+        for (let j = enemies.length-1; j >= 0; j--) {
+          let e = enemies[j];
+          let ddx = b.x - e.x;
+          let ddy = b.y - e.y;
+          let distToEnemy = Math.sqrt(ddx*ddx + ddy*ddy);
+          if (distToEnemy < e.radius + b.radius) {
+            // 击中敌人
+            e.health -= 25;  // 子弹伤害
+            bulletHit = true;
+
+            if (e.health <= 0) {
+              // 敌人死亡
+              enemies.splice(j,1);
+              kills++;
+              updateUI();
+              checkWinCondition();
+            }
+            break; // 一颗子弹只击中一个敌人
+          }
+        }
+
+        if (bulletHit) {
+          bullets.splice(i,1);
+        }
+      }
+
+      // ----- 敌人生成逻辑 -----
+      if (spawnTimer <= 0) {
+        if (enemies.length < MAX_ENEMIES && !gameWin) {
+          spawnEnemy();
+        }
+        spawnTimer = SPAWN_DELAY;
+      } else {
+        spawnTimer--;
+      }
+
+      // 再次检查胜利 (可能因击杀触发)
+      checkWinCondition();
+
+      // 更新UI显示
+      updateUI();
+    }
+
+    // ---------- 绘图模块 (CS1.6风格视觉) ----------
+    function drawBackground() {
+      // 地面/墙壁风格
+      ctx.fillStyle = '#1b2430';
+      ctx.fillRect(0, 0, W, H);
+      // 网格线 (de_dust风格)
+      ctx.strokeStyle = '#3f4b5a';
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < W; i += 50) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, H);
+        ctx.strokeStyle = '#2f3848';
+        ctx.stroke();
+      }
+      for (let j = 0; j < H; j += 50) {
+        ctx.beginPath();
+        ctx.moveTo(0, j);
+        ctx.lineTo(W, j);
+        ctx.stroke();
+      }
+      // 边缘暗角
+      let gradient = ctx.createRadialGradient(W/2, H/2, 200, W/2, H/2, 550);
+      gradient.addColorStop(0, 'rgba(0,0,0,0)');
+      gradient.addColorStop(1, 'rgba(0,0,0,0.5)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    function drawPlayer() {
+      ctx.save();
+      // 玩家模型 (特警风格)
+      ctx.shadowColor = '#000000';
+      ctx.shadowBlur = 10;
+      // 身体
+      ctx.fillStyle = '#2c3e50';
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.radius, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = '#1e2b38';
+      ctx.beginPath();
+      ctx.arc(player.x-2, player.y-2, player.radius-2, 0, Math.PI*2);
+      ctx.fill();
+      // 防弹衣/护甲
+      ctx.fillStyle = '#4a627a';
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.radius-4, 0, Math.PI*2);
+      ctx.fill();
+      // 头盔
+      ctx.fillStyle = '#2d3e50';
+      ctx.beginPath();
+      ctx.ellipse(player.x, player.y-8, 8, 6, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = '#f0c45a';
+      ctx.beginPath();
+      ctx.arc(player.x-2, player.y-10, 3, 0, Math.PI*2);
+      ctx.fill();
+      // 武器指示器 (指向鼠标)
+      ctx.beginPath();
+      ctx.strokeStyle = '#cccccc';
+      ctx.lineWidth = 3;
+      let angle = Math.atan2(mouseY - player.y, mouseX - player.x);
+      let gunX = player.x + Math.cos(angle) * (player.radius+4);
+      let gunY = player.y + Math.sin(angle) * (player.radius+4);
+      ctx.moveTo(player.x + Math.cos(angle)*8, player.y + Math.sin(angle)*8);
+      ctx.lineTo(gunX, gunY);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawEnemies() {
+      for (let e of enemies) {
+        ctx.save();
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 8;
+        // 敌人 (恐怖分子风格)
+        ctx.fillStyle = '#5c3b2b';
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.radius, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = '#3b261b';
+        ctx.beginPath();
+        ctx.arc(e.x-2, e.y-2, e.radius-3, 0, Math.PI*2);
+        ctx.fill();
+        // 头巾
+        ctx.fillStyle = '#b33e2c';
+        ctx.beginPath();
+        ctx.ellipse(e.x, e.y-7, 9, 7, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = '#d94f3a';
+        ctx.beginPath();
+        ctx.arc(e.x-2, e.y-8, 3.5, 0, Math.PI*2);
+        ctx.fill();
+        // 生命条
+        let healthPercent = e.health / e.maxHealth;
+        ctx.fillStyle = '#222';
+        ctx.fillRect(e.x-15, e.y-22, 30, 5);
+        ctx.fillStyle = healthPercent > 0.5 ? '#4caf50' : '#f44336';
+        ctx.fillRect(e.x-15, e.y-22, 30 * healthPercent, 5);
+        ctx.restore();
+      }
+    }
+
+    function drawBullets() {
+      for (let b of bullets) {
+        ctx.fillStyle = '#ffd966';
+        ctx.shadowColor = '#ffaa00';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.radius, 0, 2*Math.PI);
+        ctx.fill();
+        ctx.fillStyle = '#ffb800';
+        ctx.arc(b.x-1, b.y-1, b.radius-1, 0, 2*Math.PI);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = 'transparent';
+    }
+
+    function drawHUDdirect() {
+      // 准星
+      ctx.beginPath();
+      ctx.strokeStyle = '#00ff88';
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 6;
+      ctx.shadowColor = '#00ff88';
+      let size = 12;
+      ctx.moveTo(mouseX - size, mouseY);
+      ctx.lineTo(mouseX - 5, mouseY);
+      ctx.moveTo(mouseX + 5, mouseY);
+      ctx.lineTo(mouseX + size, mouseY);
+      ctx.moveTo(mouseX, mouseY - size);
+      ctx.lineTo(mouseX, mouseY - 5);
+      ctx.moveTo(mouseX, mouseY + 5);
+      ctx.lineTo(mouseX, mouseY + size);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = 'transparent';
+    }
+
+    function drawOverlay() {
+      if (gameOver) {
+        ctx.globalAlpha = 0.8;
+        ctx.fillStyle = '#0a0c14';
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#d64545';
+        ctx.font = 'bold 38px "Segoe UI", "Arial"';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 15;
+        ctx.fillText('💀 阵亡 💀', W/2, H/2-20);
+        ctx.font = '18px "Segoe UI"';
+        ctx.fillText('点击"新对局"重新开始', W/2, H/2+50);
+        ctx.shadowBlur = 0;
+      } else if (gameWin) {
+        ctx.globalAlpha = 0.75;
+        ctx.fillStyle = '#1a2b1f';
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#f5c542';
+        ctx.font = 'bold 42px "Segoe UI"';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 14;
+        ctx.fillText('🏆 反恐精英胜利 🏆', W/2, H/2-25);
+        ctx.font = '18px "Segoe UI"';
+        ctx.fillText('你消灭了所有威胁', W/2, H/2+55);
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    function drawAll() {
+      drawBackground();
+      drawEnemies();
+      drawBullets();
+      drawPlayer();
+      drawHUDdirect();
+      drawOverlay();
+    }
+
+    // ---------- 游戏循环 ----------
+    function gameLoop() {
+      update();
+      drawAll();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // ---------- 事件监听 ----------
+    function bindEvents() {
+      // 鼠标移动
+      canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = W / rect.width;   // canvas 物理像素比例
+        const scaleY = H / rect.height;
+        const relativeX = (e.clientX - rect.left) * scaleX;
+        const relativeY = (e.clientY - rect.top) * scaleY;
+        mouseX = Math.min(W, Math.max(0, relativeX));
+        mouseY = Math.min(H, Math.max(0, relativeY));
+      });
+
+      // 鼠标点击射击
+      canvas.addEventListener('click', (e) => {
+        e.preventDefault();
+        shootBullet();
+      });
+
+      // 键盘按下
+      window.addEventListener('keydown', (e) => {
+        const key = e.key.toLowerCase();
+        if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
+          e.preventDefault();
+          keys[key] = true;
+        }
+        // 按R换弹 (补充弹药)
+        if (key === 'r') {
+          e.preventDefault();
+          if (!gameOver && !gameWin) {
+            ammo = maxAmmo;
+            updateUI();
+          }
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        const key = e.key.toLowerCase();
+        if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
+          e.preventDefault();
+          keys[key] = false;
+        }
+      });
+
+      // 重启按钮
+      document.getElementById('restartButton').addEventListener('click', () => {
+        restartGame();
+        updateUI();
+      });
+
+      // 防止在canvas上右键菜单
+      canvas.addEventListener('contextmenu', e => e.preventDefault());
+    }
+
+    // 初始化启动
+    restartGame();
+    updateUI();
+    bindEvents();
+    gameLoop();
+
+    // 初始生成几个敌人
+    for (let i = 0; i < 3; i++) {
+      spawnEnemy();
+    }
+  })();
+</script>
+</body>
+</html>
