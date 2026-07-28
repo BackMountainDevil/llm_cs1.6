@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Counter-Strike 1.6 - Web Edition</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #000; font-family: 'Arial', sans-serif; }
+#game-canvas { width: 100vw; height: 100vh; display: block; }
+
+/* 主菜单 */
+#main-menu {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 1000;
+}
+#main-menu h1 {
+    font-size: 72px; color: #f5a623; text-shadow: 3px 3px 6px rgba(0,0,0,0.8);
+    font-weight: bold; margin-bottom: 10px; letter-spacing: 2px;
+}
+#main-menu h2 {
+    font-size: 24px; color: #ccc; margin-bottom: 50px; font-weight: normal;
+}
+.menu-btn {
+    padding: 15px 60px; margin: 10px; font-size: 20px; cursor: pointer;
+    background: linear-gradient(180deg, #4a4a4a, #2a2a2a);
+    border: 2px solid #666; color: #fff; border-radius: 3px;
+    transition: all 0.2s;
+}
+.menu-btn:hover {
+    background: linear-gradient(180deg, #f5a623, #d4891a);
+    border-color: #f5a623; color: #000;
+}
+#menu-info {
+    position: absolute; bottom: 30px; color: #666; font-size: 14px;
+}
+
+/* HUD */
+#hud {
+    position: fixed; bottom: 0; left: 0; width: 100%; height: 80px;
+    background: linear-gradient(0deg, rgba(0,0,0,0.85), transparent);
+    display: none; pointer-events: none; z-index: 100;
+}
+#health-panel {
+    position: absolute; bottom: 15px; left: 20px;
+    display: flex; align-items: center; gap: 10px;
+}
+#health-icon { font-size: 28px; }
+#health-bar {
+    width: 200px; height: 8px; background: #333; border-radius: 4px; overflow: hidden;
+}
+#health-fill { width: 100%; height: 100%; background: #4caf50; transition: width 0.3s; }
+#health-text { color: #4caf50; font-size: 32px; font-weight: bold; }
+#armor-text { color: #42a5f5; font-size: 20px; margin-left: 20px; }
+
+#ammo-panel {
+    position: absolute; bottom: 15px; right: 20px; text-align: right;
+}
+#ammo-text { color: #f5a623; font-size: 36px; font-weight: bold; }
+#ammo-reserve { color: #999; font-size: 20px; }
+#weapon-name { color: #ccc; font-size: 14px; margin-top: 2px; }
+
+#crosshair {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    z-index: 100; display: none; pointer-events: none;
+}
+.ch-line {
+    position: absolute; background: #0f0;
+}
+.ch-top { width: 2px; height: 12px; left: -1px; top: -18px; }
+.ch-bottom { width: 2px; height: 12px; left: -1px; top: 6px; }
+.ch-left { width: 12px; height: 2px; top: -1px; left: -18px; }
+.ch-right { width: 12px; height: 2px; top: -1px; left: 6px; }
+
+#kill-feed {
+    position: fixed; top: 20px; right: 20px; z-index: 100;
+    display: none; text-align: right;
+}
+.kill-msg {
+    background: rgba(0,0,0,0.7); padding: 5px 12px; margin: 3px 0;
+    border-radius: 3px; font-size: 14px; color: #fff;
+    animation: fadeOut 3s forwards;
+}
+@keyframes fadeOut { 0%{opacity:1} 70%{opacity:1} 100%{opacity:0} }
+
+#score-board {
+    position: fixed; top: 20px; left: 20px; z-index: 100; display: none;
+    background: rgba(0,0,0,0.6); padding: 10px 15px; border-radius: 5px;
+}
+#score-board div { color: #fff; font-size: 14px; margin: 3px 0; }
+#score-board .ct { color: #64b5f6; }
+#score-board .t { color: #ef5350; }
+
+#hit-marker {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    z-index: 101; display: none; pointer-events: none; font-size: 24px; color: #f00;
+}
+
+#damage-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(255,0,0,0.4));
+    opacity: 0; transition: opacity 0.1s; pointer-events: none; z-index: 99;
+}
+
+#reload-indicator {
+    position: fixed; top: 55%; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 16px; display: none; z-index: 100;
+}
+
+#round-info {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #fff; font-size: 48px; font-weight: bold; z-index: 200;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.8); display: none;
+    animation: roundFade 2s forwards;
+}
+@keyframes roundFade { 0%{opacity:1;transform:translate(-50%,-50%) scale(1.2)} 100%{opacity:0;transform:translate(-50%,-50%) scale(1)} }
+
+#death-screen {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(139,0,0,0.3); display: none; z-index: 150;
+    flex-direction: column; align-items: center; justify-content: center;
+}
+#death-screen h2 { color: #fff; font-size: 48px; margin-bottom: 20px; }
+#death-screen p { color: #ccc; font-size: 18px; }
+
+#minimap {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    width: 150px; height: 150px; background: rgba(0,0,0,0.5);
+    border: 1px solid #444; border-radius: 5px; z-index: 100; display: none;
+}
+</style>
+</head>
+<body>
+
+<div id="main-menu">
+    <h1>COUNTER-STRIKE</h1>
+    <h2>1.6 Web Edition</h2>
+    <button class="menu-btn" onclick="startGame('de_dust2')">新游戏 - de_dust2</button>
+    <button class="menu-btn" onclick="startGame('de_inferno')">新游戏 - de_inferno</button>
+    <div id="menu-info">WASD移动 | 鼠标射击 | R换弹 | 1/2/3切换武器 | Shift静步 | Space跳跃</div>
+</div>
+
+<canvas id="game-canvas"></canvas>
+
+<div id="hud">
+    <div id="health-panel">
+        <span id="health-icon">✚</span>
+        <div id="health-bar"><div id="health-fill"></div></div>
+        <span id="health-text">100</span>
+        <span id="armor-text">🛡 100</span>
+    </div>
+    <div id="ammo-panel">
+        <span id="ammo-text">30</span> / <span id="ammo-reserve">90</span>
+        <div id="weapon-name">AK-47</div>
+    </div>
+</div>
+
+<div id="crosshair">
+    <div class="ch-line ch-top"></div>
+    <div class="ch-line ch-bottom"></div>
+    <div class="ch-line ch-left"></div>
+    <div class="ch-line ch-right"></div>
+</div>
+
+<div id="kill-feed"></div>
+<div id="score-board">
+    <div class="ct">CT: <span id="ct-score">0</span></div>
+    <div class="t">T: <span id="t-score">0</span></div>
+    <div>击杀: <span id="kills">0</span></div>
+</div>
+<div id="hit-marker">✕</div>
+<div id="damage-overlay"></div>
+<div id="reload-indicator">换弹中...</div>
+<div id="round-info"></div>
+<div id="death-screen"><h2>你被击杀了</h2><p>3秒后重生...</p></div>
+<canvas id="minimap"></canvas>
+
+<script>
+// ============ 游戏引擎 ============
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d');
+const minimapCanvas = document.getElementById('minimap');
+const minimapCtx = minimapCanvas.getContext('2d');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+minimapCanvas.width = 150;
+minimapCanvas.height = 150;
+
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+});
+
+// ============ 游戏状态 ============
+let gameRunning = false;
+let currentMap = 'de_dust2';
+
+const player = {
+    x: 0, y: 0, z: 0,
+    vx: 0, vy: 0, vz: 0,
+    yaw: 0, pitch: 0,
+    health: 100, armor: 100,
+    speed: 0.08,
+    onGround: true,
+    kills: 0, deaths: 0,
+    team: 'CT'
+};
+
+const weapons = {
+    knife: { name: 'Knife', ammo: Infinity, reserve: Infinity, magSize: Infinity, damage: 55, fireRate: 500, auto: false, reloadTime: 0, spread: 0, type: 'melee' },
+    glock: { name: 'Glock-18', ammo: 20, reserve: 120, magSize: 20, damage: 18, fireRate: 150, auto: false, reloadTime: 2200, spread: 0.03, type: 'pistol' },
+    usp: { name: 'USP', ammo: 12, reserve: 100, magSize: 12, damage: 25, fireRate: 170, auto: false, reloadTime: 2700, spread: 0.02, type: 'pistol' },
+    ak47: { name: 'AK-47', ammo: 30, reserve: 90, magSize: 30, damage: 36, fireRate: 100, auto: true, reloadTime: 2500, spread: 0.04, type: 'rifle' },
+    m4a1: { name: 'M4A1', ammo: 30, reserve: 90, magSize: 30, damage: 32, fireRate: 90, auto: true, reloadTime: 3100, spread: 0.03, type: 'rifle' },
+    awp: { name: 'AWP', ammo: 10, reserve: 30, magSize: 10, damage: 115, fireRate: 1500, auto: false, reloadTime: 3700, spread: 0.005, type: 'sniper' },
+    deagle: { name: 'Desert Eagle', ammo: 7, reserve: 35, magSize: 7, damage: 54, fireRate: 400, auto: false, reloadTime: 2200, spread: 0.04, type: 'pistol' }
+};
+
+let currentWeapon = 'ak47';
+let weaponSlots = ['knife', 'ak47', 'glock'];
+let currentSlot = 1;
+let isReloading = false;
+let reloadTimer = 0;
+let lastShot = 0;
+let mouseDown = false;
+
+let bots = [];
+let bullets = [];
+let particles = [];
+let killFeed = [];
+let ctScore = 0;
+let tScore = 0;
+let roundNum = 1;
+
+// ============ 地图数据 ============
+const maps = {
+    de_dust2: {
+        spawnCT: { x: -20, y: 0, z: -20 },
+        spawnT: { x: 20, y: 0, z: 20 },
+        walls: [],
+        boxes: [],
+        floorColor: '#c2a060',
+        wallColor: '#d4a855',
+        skyColor: '#87CEEB'
+    },
+    de_inferno: {
+        spawnCT: { x: -18, y: 0, z: -15 },
+        spawnT: { x: 18, y: 0, z: 18 },
+        walls: [],
+        boxes: [],
+        floorColor: '#8B7355',
+        wallColor: '#CD853F',
+        skyColor: '#B0C4DE'
+    }
+};
+
+function generateMap(mapName) {
+    const map = maps[mapName];
+    map.walls = [];
+    map.boxes = [];
+
+    // 外围墙壁
+    const S = 30;
+    map.walls.push({ x: -S, z: -S, w: S*2, h: 4, d: 0.5, color: map.wallColor });
+    map.walls.push({ x: -S, z: S, w: S*2, h: 4, d: 0.5, color: map.wallColor });
+    map.walls.push({ x: -S, z: -S, w: 0.5, h: 4, d: S*2, color: map.wallColor });
+    map.walls.push({ x: S, z: -S, w: 0.5, h: 4, d: S*2, color: map.wallColor });
+
+    if (mapName === 'de_dust2') {
+        // 中间墙壁
+        map.walls.push({ x: -5, z: -10, w: 0.5, h: 3.5, d: 12, color: '#c8a050' });
+        map.walls.push({ x: 5, z: -2, w: 0.5, h: 3.5, d: 10, color: '#c8a050' });
+        map.walls.push({ x: -15, z: 5, w: 10, h: 3.5, d: 0.5, color: '#c8a050' });
+        map.walls.push({ x: 8, z: -15, w: 8, h: 3.5, d: 0.5, color: '#c8a050' });
+        map.walls.push({ x: -10, z: -20, w: 0.5, h: 3.5, d: 8, color: '#c8a050' });
+        map.walls.push({ x: 12, z: 10, w: 0.5, h: 3.5, d: 12, color: '#c8a050' });
+
+        // 箱子
+        const boxPositions = [
+            [-8, -5], [-3, 8], [10, -8], [15, 5], [-15, -15],
+            [0, 15], [-12, 12], [8, 18], [-20, 0], [20, -10],
+            [3, -18], [-18, 18], [18, -18], [-5, 22], [22, 12]
+        ];
+        boxPositions.forEach(([bx, bz]) => {
+            const size = 1 + Math.random() * 1.5;
+            const height = 1 + Math.random() * 1.5;
+            map.boxes.push({ x: bx, z: bz, w: size, h: height, d: size, color: '#8B6914' });
+        });
+    } else {
+        // de_inferno
+        map.walls.push({ x: -8, z: -8, w: 0.5, h: 3.5, d: 10, color: '#A0522D' });
+        map.walls.push({ x: 3, z: 0, w: 0.5, h: 3.5, d: 14, color: '#A0522D' });
+        map.walls.push({ x: -12, z: 8, w: 12, h: 3.5, d: 0.5, color: '#A0522D' });
+        map.walls.push({ x: 10, z: -12, w: 10, h: 3.5, d: 0.5, color: '#A0522D' });
+        map.walls.push({ x: -5, z: -18, w: 0.5, h: 3.5, d: 6, color: '#A0522D' });
+        map.walls.push({ x: 15, z: 5, w: 0.5, h: 3.5, d: 10, color: '#A0522D' });
+
+        const boxPositions = [
+            [-6, -3], [5, 10], [12, -5], [-15, -12], [0, 20],
+            [-10, 15], [8, -18], [20, 8], [-20, 5], [15, 20],
+            [-3, -22], [22, -15], [-18, -20], [10, 25], [-22, 15]
+        ];
+        boxPositions.forEach(([bx, bz]) => {
+            const size = 1 + Math.random() * 1.5;
+            const height = 1 + Math.random() * 2;
+            map.boxes.push({ x: bx, z: bz, w: size, h: height, d: size, color: '#654321' });
+        });
+    }
+}
+
+// ============ Bot AI ============
+function createBot(team) {
+    const map = maps[currentMap];
+    const spawn = team === 'T' ? map.spawnT : map.spawnCT;
+    return {
+        x: spawn.x + (Math.random() - 0.5) * 8,
+        y: 0,
+        z: spawn.z + (Math.random() - 0.5) * 8,
+        yaw: Math.random() * Math.PI * 2,
+        health: 100,
+        team: team,
+        alive: true,
+        weapon: team === 'T' ? 'ak47' : 'm4a1',
+        lastShot: 0,
+        targetX: 0, targetZ: 0,
+        moveTimer: 0,
+        state: 'patrol', // patrol, chase, attack
+        alertTimer: 0,
+        respawnTimer: 0,
+        name: team === 'T' ? 
+            ['Phoenix', 'Elite Crew', 'Arab', 'Guerrilla'][Math.floor(Math.random()*4)] :
+            ['SEAL', 'GSG9', 'SAS', 'GIGN'][Math.floor(Math.random()*4)]
+    };
+}
+
+function initBots() {
+    bots = [];
+    for (let i = 0; i < 5; i++) bots.push(createBot('T'));
+    for (let i = 0; i < 4; i++) bots.push(createBot('CT'));
+}
+
+function updateBots(dt) {
+    const now = Date.now();
+    bots.forEach(bot => {
+        if (!bot.alive) {
+            bot.respawnTimer -= dt;
+            if (bot.respawnTimer <= 0) {
+                const map = maps[currentMap];
+                const spawn = bot.team === 'T' ? map.spawnT : map.spawnCT;
+                bot.x = spawn.x + (Math.random() - 0.5) * 8;
+                bot.z = spawn.z + (Math.random() - 0.5) * 8;
+                bot.health = 100;
+                bot.alive = true;
+            }
+            return;
+        }
+
+        // 寻找目标
+        let target = null;
+        let minDist = Infinity;
+
+        // 检查玩家
+        if (player.health > 0) {
+            const dx = player.x - bot.x;
+            const dz = player.z - bot.z;
+            const dist = Math.sqrt(dx*dx + dz*dz);
+            if (dist < 25 && bot.team !== player.team) {
+                target = { x: player.x, z: player.z, isPlayer: true };
+                minDist = dist;
+            }
+        }
+
+        // 检查其他bot
+        bots.forEach(other => {
+            if (other === bot || !other.alive || other.team === bot.team) return;
+            const dx = other.x - bot.x;
+            const dz = other.z - bot.z;
+            const dist = Math.sqrt(dx*dx + dz*dz);
+            if (dist < minDist && dist < 25) {
+                minDist = dist;
+                target = { x: other.x, z: other.z, isPlayer: false, ref: other };
+            }
+        });
+
+        if (target) {
+            bot.state = minDist < 15 ? 'attack' : 'chase';
+            const dx = target.x - bot.x;
+            const dz = target.z - bot.z;
+            bot.yaw = Math.atan2(dx, dz);
+
+            if (bot.state === 'chase') {
+                bot.x += Math.sin(bot.yaw) * 0.04;
+                bot.z += Math.cos(bot.yaw) * 0.04;
+            } else if (bot.state === 'attack') {
+                // 射击
+                const wp = weapons[bot.weapon];
+                if (now - bot.lastShot > wp.fireRate + Math.random() * 200) {
+                    bot.lastShot = now;
+                    const spread = wp.spread * 2;
+                    const hitChance = Math.max(0.2, 1 - minDist / 30);
+                    if (Math.random() < hitChance * 0.6) {
+                        if (target.isPlayer) {
+                            damagePlayer(wp.damage * (0.5 + Math.random() * 0.5));
+                        } else if (target.ref) {
+                            target.ref.health -= wp.damage * (0.5 + Math.random() * 0.5);
+                            if (target.ref.health <= 0) {
+                                target.ref.alive = false;
+                                target.ref.respawnTimer = 3000;
+                                addKillFeed(bot.name, target.ref.name, bot.weapon);
+                            }
+                        }
+                    }
+                    // 枪口火焰粒子
+                    particles.push({
+                        x: bot.x + Math.sin(bot.yaw) * 0.5,
+                        y: 1.5,
+                        z: bot.z + Math.cos(bot.yaw) * 0.5,
+                        life: 100, maxLife: 100, color: '#ff0', size: 3
+                    });
+                }
+                //  strafing
+                bot.x += Math.cos(bot.yaw) * Math.sin(now * 0.003) * 0.02;
+                bot.z -= Math.sin(bot.yaw) * Math.sin(now * 0.003) * 0.02;
+            }
+        } else {
+            bot.state = 'patrol';
+            bot.moveTimer -= dt;
+            if (bot.moveTimer <= 0) {
+                bot.targetX = (Math.random() - 0.5) * 50;
+                bot.targetZ = (Math.random() - 0.5) * 50;
+                bot.moveTimer = 2000 + Math.random() * 3000;
+            }
+            const dx = bot.targetX - bot.x;
+            const dz = bot.targetZ - bot.z;
+            const dist = Math.sqrt(dx*dx + dz*dz);
+            if (dist > 1) {
+                bot.yaw = Math.atan2(dx, dz);
+                bot.x += Math.sin(bot.yaw) * 0.03;
+                bot.z += Math.cos(bot.yaw) * 0.03;
+            }
+        }
+
+        // 边界限制
+        bot.x = Math.max(-28, Math.min(28, bot.x));
+        bot.z = Math.max(-28, Math.min(28, bot.z));
+
+        // 简单碰撞
+        const map = maps[currentMap];
+        [...map.walls, ...map.boxes].forEach(obj => {
+            if (bot.x > obj.x - obj.w/2 - 0.5 && bot.x < obj.x + obj.w/2 + 0.5 &&
+                bot.z > obj.z - obj.d/2 - 0.5 && bot.z < obj.z + obj.d/2 + 0.5) {
+                const cx = obj.x, cz = obj.z;
+                const ddx = bot.x - cx, ddz = bot.z - cz;
+                if (Math.abs(ddx) > Math.abs(ddz)) {
+                    bot.x = ddx > 0 ? obj.x + obj.w/2 + 0.5 : obj.x - obj.w/2 - 0.5;
+                } else {
+                    bot.z = ddz > 0 ? obj.z + obj.d/2 + 0.5 : obj.z - obj.d/2 - 0.5;
+                }
+            }
+        });
+    });
+}
+
+// ============ 玩家控制 ============
+const keys = {};
+document.addEventListener('keydown', e => { keys[e.code] = true; handleKeyPress(e); });
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+function handleKeyPress(e) {
+    if (!gameRunning) return;
+    if (e.code === 'KeyR') startReload();
+    if (e.code === 'Digit1') switchWeapon(0);
+    if (e.code === 'Digit2') switchWeapon(1);
+    if (e.code === 'Digit3') switchWeapon(2);
+    if (e.code === 'Space' && player.onGround) {
+        player.vz = 0.15;
+        player.onGround = false;
+    }
+}
+
+function switchWeapon(slot) {
+    if (slot >= 0 && slot < weaponSlots.length) {
+        currentSlot = slot;
+        currentWeapon = weaponSlots[slot];
+        isReloading = false;
+        document.getElementById('reload-indicator').style.display = 'none';
+        updateHUD();
+    }
+}
+
+function startReload() {
+    const wp = weapons[currentWeapon];
+    if (wp.type === 'melee' || isReloading || wp.ammo === wp.magSize || wp.reserve <= 0) return;
+    isReloading = true;
+    reloadTimer = wp.reloadTime;
+    document.getElementById('reload-indicator').style.display = 'block';
+    playSound('reload');
+}
+
+function updatePlayer(dt) {
+    if (player.health <= 0) return;
+
+    const speed = keys['ShiftLeft'] ? player.speed * 0.4 : player.speed;
+    let moveX = 0, moveZ = 0;
+
+    if (keys['KeyW']) { moveX += Math.sin(player.yaw); moveZ += Math.cos(player.yaw); }
+    if (keys['KeyS']) { moveX -= Math.sin(player.yaw); moveZ -= Math.cos(player.yaw); }
+    if (keys['KeyA']) { moveX += Math.cos(player.yaw); moveZ -= Math.sin(player.yaw); }
+    if (keys['KeyD']) { moveX -= Math.cos(player.yaw); moveZ += Math.sin(player.yaw); }
+
+    const len = Math.sqrt(moveX*moveX + moveZ*moveZ);
+    if (len > 0) {
+        moveX = moveX / len * speed;
+        moveZ = moveZ / len * speed;
+    }
+
+    player.x += moveX;
+    player.z += moveZ;
+
+    // 重力
+    player.vz -= 0.008;
+    player.y += player.vz;
+    if (player.y <= 0) { player.y = 0; player.vz = 0; player.onGround = true; }
+
+    // 边界
+    player.x = Math.max(-28, Math.min(28, player.x));
+    player.z = Math.max(-28, Math.min(28, player.z));
+
+    // 碰撞检测
+    const map = maps[currentMap];
+    [...map.walls, ...map.boxes].forEach(obj => {
+        const hw = obj.w/2 + 0.4, hd = obj.d/2 + 0.4;
+        if (player.x > obj.x - hw && player.x < obj.x + hw &&
+            player.z > obj.z - hd && player.z < obj.z + hd &&
+            player.y < obj.h) {
+            const cx = obj.x, cz = obj.z;
+            const dx = player.x - cx, dz = player.z - cz;
+            const overlapX = hw - Math.abs(dx);
+            const overlapZ = hd - Math.abs(dz);
+            if (overlapX < overlapZ) {
+                player.x = dx > 0 ? obj.x + hw : obj.x - hw;
+            } else {
+                player.z = dz > 0 ? obj.z + hd : obj.z - hd;
+            }
+        }
+    });
+
+    // 换弹
+    if (isReloading) {
+        reloadTimer -= dt;
+        if (reloadTimer <= 0) {
+            const wp = weapons[currentWeapon];
+            const needed = wp.magSize - wp.ammo;
+            const available = Math.min(needed, wp.reserve);
+            wp.ammo += available;
+            wp.reserve -= available;
+            isReloading = false;
+            document.getElementById('reload-indicator').style.display = 'none';
+            updateHUD();
+        }
+    }
+
+    // 自动射击
+    if (mouseDown && weapons[currentWeapon].auto) {
+        shoot();
+    }
+}
+
+// ============ 射击系统 ============
+function shoot() {
+    const now = Date.now();
+    const wp = weapons[currentWeapon];
+
+    if (wp.type === 'melee') {
+        if (now - lastShot < wp.fireRate) return;
+        lastShot = now;
+        // 近战攻击
+        bots.forEach(bot => {
+            if (!bot.alive || bot.team === player.team) return;
+            const dx = bot.x - player.x;
+            const dz = bot.z - player.z;
+            const dist = Math.sqrt(dx*dx + dz*dz);
+            if (dist < 2.5) {
+                bot.health -= wp.damage;
+                if (bot.health <= 0) {
+                    bot.alive = false;
+                    bot.respawnTimer = 3000;
+                    player.kills++;
+                    addKillFeed('You', bot.name, 'knife');
+                    updateScore();
+                }
+            }
+        });
+        playSound('knife');
+        return;
+    }
+
+    if (isReloading || now - lastShot < wp.fireRate) return;
+    if (wp.ammo <= 0) {
+        playSound('empty');
+        startReload();
+        return;
+    }
+
+    lastShot = now;
+    wp.ammo--;
+    updateHUD();
+    playSound('shoot');
+
+    // 后坐力
+    player.pitch -= 0.01 + Math.random() * 0.01;
+
+    // 射线检测
+    const spread = wp.spread * (keys['ShiftLeft'] ? 0.5 : 1);
+    const rayYaw = player.yaw + (Math.random() - 0.5) * spread;
+    const rayPitch = player.pitch + (Math.random() - 0.5) * spread;
+
+    const dirX = Math.sin(rayYaw) * Math.cos(rayPitch);
+    const dirY = Math.sin(rayPitch);
+    const dirZ = Math.cos(rayYaw) * Math.cos(rayPitch);
+
+    let hitBot = null;
+    let hitDist = Infinity;
+
+    bots.forEach(bot => {
+        if (!bot.alive || bot.team === player.team) return;
+        const dx = bot.x - player.x;
+        const dy = 1.2 - (player.y + 1.6);
+        const dz = bot.z - player.z;
+
+        // 简化射线-球体碰撞
+        const dot = dx * dirX + dy * dirY + dz * dirZ;
+        if (dot < 0) return;
+
+        const closestX = player.x + dirX * dot;
+        const closestY = (player.y + 1.6) + dirY * dot;
+        const closestZ = player.z + dirZ * dot;
+
+        const distX = closestX - bot.x;
+        const distY = closestY - 1.2;
+        const distZ = closestZ - bot.z;
+        const dist = Math.sqrt(distX*distX + distY*distY + distZ*distZ);
+
+        if (dist < 0.8 && dot < hitDist) {
+            hitDist = dot;
+            hitBot = bot;
+        }
+    });
+
+    if (hitBot) {
+        const headshot = Math.random() < 0.15;
+        const dmg = headshot ? wp.damage * 3 : wp.damage;
+        hitBot.health -= dmg;
+
+        showHitMarker(headshot);
+        spawnBloodParticles(hitBot.x, 1.2, hitBot.z);
+
+        if (hitBot.health <= 0) {
+            hitBot.alive = false;
+            hitBot.respawnTimer = 3000;
+            player.kills++;
+            addKillFeed('You', hitBot.name, currentWeapon, headshot);
+            updateScore();
+            playSound('kill');
+        }
+    } else {
+        // 墙壁弹孔
+        const map = maps[currentMap];
+        const rayEnd = { x: player.x + dirX * 50, y: player.y + 1.6 + dirY * 50, z: player.z + dirZ * 50 };
+        [...map.walls, ...map.boxes].forEach(obj => {
+            // 简单检测
+        });
+        spawnImpactParticles(player.x + dirX * 10, player.y + 1.6 + dirY * 10, player.z + dirZ * 10);
+    }
+}
+
+// ============ 伤害系统 ============
+function damagePlayer(amount) {
+    if (player.health <= 0) return;
+
+    if (player.armor > 0) {
+        const absorbed = amount * 0.5;
+        player.armor = Math.max(0, player.armor - absorbed);
+        amount *= 0.5;
+    }
+
+    player.health -= amount;
+    document.getElementById('damage-overlay').style.opacity = '0.5';
+    setTimeout(() => document.getElementById('damage-overlay').style.opacity = '0', 200);
+
+    if (player.health <= 0) {
+        player.health = 0;
+        playerDeath();
+    }
+    updateHUD();
+}
+
+function playerDeath() {
+    player.deaths++;
+    document.getElementById('death-screen').style.display = 'flex';
+    playSound('death');
+    setTimeout(() => {
+        player.health = 100;
+        player.armor = 100;
+        const map = maps[currentMap];
+        player.x = map.spawnCT.x;
+        player.z = map.spawnCT.z;
+        player.y = 0;
+        weapons[currentWeapon].ammo = weapons[currentWeapon].magSize;
+        document.getElementById('death-screen').style.display = 'none';
+        updateHUD();
+    }, 3000);
+}
+
+// ============ 粒子系统 ============
+function spawnBloodParticles(x, y, z) {
+    for (let i = 0; i < 8; i++) {
+        particles.push({
+            x, y, z,
+            vx: (Math.random()-0.5)*0.1,
+            vy: Math.random()*0.05,
+            vz: (Math.random()-0.5)*0.1,
+            life: 500, maxLife: 500,
+            color: '#a00', size: 2
+        });
+    }
+}
+
+function spawnImpactParticles(x, y, z) {
+    for (let i = 0; i < 4; i++) {
+        particles.push({
+            x, y, z,
+            vx: (Math.random()-0.5)*0.05,
+            vy: Math.random()*0.03,
+            vz: (Math.random()-0.5)*0.05,
+            life: 300, maxLife: 300,
+            color: '#ff8', size: 1.5
+        });
+    }
+}
+
+function updateParticles(dt) {
+    particles = particles.filter(p => {
+        p.life -= dt;
+        p.x += (p.vx || 0);
+        p.y += (p.vy || 0);
+        p.z += (p.vz || 0);
+        if (p.vy !== undefined) p.vy -= 0.001;
+        return p.life > 0;
+    });
+}
+
+// ============ 3D渲染引擎 ============
+function render() {
+    const W = canvas.width, H = canvas.height;
+    const map = maps[currentMap];
+
+    // 天空
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+    skyGrad.addColorStop(0, map.skyColor);
+    skyGrad.addColorStop(1, '#e8d8b0');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // 地面
+    const horizonY = H/2 - player.pitch * H;
+    ctx.fillStyle = map.floorColor;
+    ctx.fillRect(0, horizonY, W, H - horizonY);
+
+    // 地面网格线
+    ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+    ctx.lineWidth = 1;
+    for (let i = -30; i <= 30; i += 2) {
+        const p1 = project3D(i, 0, -30);
+        const p2 = project3D(i, 0, 30);
+        if (p1 && p2) {
+            ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+        }
+        const p3 = project3D(-30, 0, i);
+        const p4 = project3D(30, 0, i);
+        if (p3 && p4) {
+            ctx.beginPath(); ctx.moveTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y); ctx.stroke();
+        }
+    }
+
+    // 收集所有可渲染物体并排序
+    let renderList = [];
+
+    // 墙壁
+    map.walls.forEach(wall => {
+        renderList.push({ type: 'box', obj: wall, dist: getDist(wall.x, wall.z) });
+    });
+
+    // 箱子
+    map.boxes.forEach(box => {
+        renderList.push({ type: 'box', obj: box, dist: getDist(box.x, box.z) });
+    });
+
+    // Bots
+    bots.forEach(bot => {
+        if (bot.alive) {
+            renderList.push({ type: 'bot', obj: bot, dist: getDist(bot.x, bot.z) });
+        }
+    });
+
+    // 粒子
+    particles.forEach(p => {
+        renderList.push({ type: 'particle', obj: p, dist: getDist(p.x, p.z) });
+    });
+
+    // 按距离排序（远到近）
+    renderList.sort((a, b) => b.dist - a.dist);
+
+    // 渲染
+    renderList.forEach(item => {
+        if (item.type === 'box') renderBox(item.obj);
+        else if (item.type === 'bot') renderBot(item.obj);
+        else if (item.type === 'particle') renderParticle(item.obj);
+    });
+
+    // 武器视图模型
+    renderWeaponModel();
+
+    // 小地图
+    renderMinimap();
+}
+
+function getDist(x, z) {
+    const dx = x - player.x, dz = z - player.z;
+    return Math.sqrt(dx*dx + dz*dz);
+}
+
+function project3D(x, y, z) {
+    const dx = x - player.x;
+    const dy = y - (player.y + 1.6);
+    const dz = z - player.z;
+
+    // 旋转
+    const cosY = Math.cos(-player.yaw), sinY = Math.sin(-player.yaw);
+    const rx = dx * cosY - dz * sinY;
+    const rz = dx * sinY + dz * cosY;
+
+    const cosP = Math.cos(-player.pitch), sinP = Math.sin(-player.pitch);
+    const ry = dy * cosP - rz * sinP;
+    const rz2 = dy * sinP + rz * cosP;
+
+    if (rz2 <= 0.1) return null;
+
+    const fov = 500;
+    const sx = canvas.width/2 + (rx / rz2) * fov;
+    const sy = canvas.height/2 - (ry / rz2) * fov;
+
+    return { x: sx, y: sy, z: rz2 };
+}
+
+function renderBox(obj) {
+    const hw = obj.w/2, hd = obj.d/2, h = obj.h;
+    const corners = [
+        [obj.x-hw, 0, obj.z-hd], [obj.x+hw, 0, obj.z-hd],
+        [obj.x+hw, 0, obj.z+hd], [obj.x-hw, 0, obj.z+hd],
+        [obj.x-hw, h, obj.z-hd], [obj.x+hw, h, obj.z-hd],
+        [obj.x+hw, h, obj.z+hd], [obj.x-hw, h, obj.z+hd]
+    ];
+
+    const projected = corners.map(c => project3D(c[0], c[1], c[2]));
+
+    const faces = [
+        [0,1,5,4], [1,2,6,5], [2,3,7,6], [3,0,4,7], [4,5,6,7]
+    ];
+
+    const faceColors = [
+        shadeColor(obj.color, -20),
+        shadeColor(obj.color, -10),
+        shadeColor(obj.color, -30),
+        shadeColor(obj.color, 0),
+        shadeColor(obj.color, 20)
+    ];
+
+    faces.forEach((face, fi) => {
+        const pts = face.map(i => projected[i]);
+        if (pts.some(p => p === null)) return;
+        if (pts.every(p => p.z > 50)) return;
+
+        ctx.fillStyle = faceColors[fi];
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    });
+}
+
+function renderBot(bot) {
+    const base = project3D(bot.x, 0, bot.z);
+    const head = project3D(bot.x, 1.8, bot.z);
+    const body = project3D(bot.x, 1.0, bot.z);
+
+    if (!base || !head || !body) return;
+    if (base.z > 40) return;
+
+    const scale = 500 / base.z;
+    const teamColor = bot.team === 'T' ? '#c0392b' : '#2980b9';
+    const teamColorDark = bot.team === 'T' ? '#922b21' : '#1a5276';
+
+    // 身体
+    ctx.fillStyle = teamColor;
+    ctx.fillRect(body.x - 8*scale/10, body.y - 15*scale/10, 16*scale/10, 30*scale/10);
+
+    // 头
+    ctx.fillStyle = '#f5cba7';
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 6*scale/10, 0, Math.PI*2);
+    ctx.fill();
+
+    // 头盔
+    ctx.fillStyle = teamColorDark;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y - 2*scale/10, 7*scale/10, Math.PI, 0);
+    ctx.fill();
+
+    // 腿
+    ctx.fillStyle = '#2c3e50';
+    ctx.fillRect(base.x - 6*scale/10, base.y - 12*scale/10, 5*scale/10, 12*scale/10);
+    ctx.fillRect(base.x + 1*scale/10, base.y - 12*scale/10, 5*scale/10, 12*scale/10);
+
+    // 武器
+    ctx.fillStyle = '#333';
+    const gunDir = bot.yaw;
+    ctx.save();
+    ctx.translate(body.x, body.y);
+    ctx.fillRect(0, -2*scale/10, 15*scale/10, 3*scale/10);
+    ctx.restore();
+
+    // 血条
+    if (bot.health < 100) {
+        const barW = 20 * scale/10;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(head.x - barW/2, head.y - 14*scale/10, barW, 3*scale/10);
+        ctx.fillStyle = bot.health > 50 ? '#2ecc71' : bot.health > 25 ? '#f39c12' : '#e74c3c';
+        ctx.fillRect(head.x - barW/2, head.y - 14*scale/10, barW * bot.health/100, 3*scale/10);
+    }
+
+    // 名字
+    ctx.fillStyle = '#fff';
+    ctx.font = `${Math.max(8, 10*scale/10)}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.fillText(bot.name, head.x, head.y - 18*scale/10);
+}
+
+function renderParticle(p) {
+    const proj = project3D(p.x, p.y, p.z);
+    if (!proj) return;
+    const alpha = p.life / p.maxLife;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    const size = p.size * 500 / proj.z;
+    ctx.fillRect(proj.x - size/2, proj.y - size/2, size, size);
+    ctx.globalAlpha = 1;
+}
+
+function renderWeaponModel() {
+    const W = canvas.width, H = canvas.height;
+    const wp = weapons[currentWeapon];
+    const bobX = Math.sin(Date.now() * 0.005) * 3;
+    const bobY = Math.abs(Math.cos(Date.now() * 0.005)) * 3;
+
+    const recoilOffset = Math.max(0, 50 - (Date.now() - lastShot) * 0.5);
+
+    ctx.save();
+    ctx.translate(W * 0.65 + bobX, H * 0.75 + bobY + recoilOffset);
+
+    if (wp.type === 'melee') {
+        // 刀
+        ctx.fillStyle = '#888';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(60, -40);
+        ctx.lineTo(65, -35);
+        ctx.lineTo(5, 5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#4a3728';
+        ctx.fillRect(-5, 0, 15, 30);
+    } else if (wp.type === 'pistol') {
+        ctx.fillStyle = '#2c2c2c';
+        ctx.fillRect(0, -10, 50, 15);
+        ctx.fillRect(10, 5, 12, 30);
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(45, -8, 15, 10);
+    } else if (wp.type === 'sniper') {
+        ctx.fillStyle = '#1a3a1a';
+        ctx.fillRect(-20, -8, 120, 12);
+        ctx.fillStyle = '#2c2c2c';
+        ctx.fillRect(80, -12, 40, 8);
+        ctx.fillRect(20, 4, 12, 25);
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(100, -8, 8, 0, Math.PI*2);
+        ctx.fill();
+    } else {
+        // 步枪
+        ctx.fillStyle = wp.name === 'AK-47' ? '#5c3a1e' : '#2c2c2c';
+        ctx.fillRect(-10, -8, 100, 14);
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(80, -6, 30, 8);
+        ctx.fillRect(20, 6, 12, 28);
+        ctx.fillStyle = '#333';
+        ctx.fillRect(-10, -12, 25, 6);
+        // 弹匣
+        ctx.fillStyle = '#444';
+        ctx.save();
+        ctx.translate(35, 6);
+        ctx.rotate(0.2);
+        ctx.fillRect(0, 0, 8, 25);
+        ctx.restore();
+    }
+
+    ctx.restore();
+}
+
+function renderMinimap() {
+    const mc = minimapCtx;
+    const size = 150;
+    const scale = size / 60;
+
+    mc.fillStyle = 'rgba(0,0,0,0.7)';
+    mc.fillRect(0, 0, size, size);
+
+    const map = maps[currentMap];
+    const offsetX = size/2 - player.x * scale;
+    const offsetZ = size/2 - player.z * scale;
+
+    // 墙壁
+    mc.fillStyle = '#555';
+    [...map.walls, ...map.boxes].forEach(obj => {
+        mc.fillRect(
+            obj.x * scale + offsetX - obj.w*scale/2,
+            obj.z * scale + offsetZ - obj.d*scale/2,
+            obj.w * scale, obj.d * scale
+        );
+    });
+
+    // Bots
+    bots.forEach(bot => {
+        if (!bot.alive) return;
+        mc.fillStyle = bot.team === 'T' ? '#e74c3c' : '#3498db';
+        mc.beginPath();
+        mc.arc(bot.x * scale + offsetX, bot.z * scale + offsetZ, 3, 0, Math.PI*2);
+        mc.fill();
+    });
+
+    // 玩家
+    mc.fillStyle = '#2ecc71';
+    mc.beginPath();
+    mc.arc(size/2, size/2, 4, 0, Math.PI*2);
+    mc.fill();
+
+    // 玩家方向
+    mc.strokeStyle = '#2ecc71';
+    mc.lineWidth = 2;
+    mc.beginPath();
+    mc.moveTo(size/2, size/2);
+    mc.lineTo(size/2 + Math.sin(player.yaw)*10, size/2 + Math.cos(player.yaw)*10);
+    mc.stroke();
+}
+
+// ============ HUD更新 ============
+function updateHUD() {
+    const wp = weapons[currentWeapon];
+    document.getElementById('health-text').textContent = Math.ceil(player.health);
+    document.getElementById('health-fill').style.width = player.health + '%';
+    document.getElementById('health-fill').style.background = player.health > 50 ? '#4caf50' : player.health > 25 ? '#ff9800' : '#f44336';
+    document.getElementById('armor-text').textContent = '🛡 ' + Math.ceil(player.armor);
+    document.getElementById('ammo-text').textContent = wp.ammo === Infinity ? '∞' : wp.ammo;
+    document.getElementById('ammo-reserve').textContent = wp.reserve === Infinity ? '∞' : wp.reserve;
+    document.getElementById('weapon-name').textContent = wp.name;
+    document.getElementById('kills').textContent = player.kills;
+}
+
+function updateScore() {
+    document.getElementById('ct-score').textContent = ctScore;
+    document.getElementById('t-score').textContent = tScore;
+    document.getElementById('kills').textContent = player.kills;
+}
+
+function addKillFeed(killer, victim, weapon, headshot) {
+    const feed = document.getElementById('kill-feed');
+    const msg = document.createElement('div');
+    msg.className = 'kill-msg';
+    const hs = headshot ? ' ⚡' : '';
+    msg.innerHTML = `<span style="color:${killer==='You'?'#4caf50':'#fff'}">${killer}</span> [${weapons[weapon]?.name || weapon}]${hs} <span style="color:#e74c3c">${victim}</span>`;
+    feed.appendChild(msg);
+    setTimeout(() => msg.remove(), 3500);
+}
+
+function showHitMarker(headshot) {
+    const hm = document.getElementById('hit-marker');
+    hm.style.display = 'block';
+    hm.style.color = headshot ? '#f00' : '#fff';
+    hm.textContent = headshot ? '✕ HEADSHOT' : '✕';
+    setTimeout(() => hm.style.display = 'none', 150);
+}
+
+// ============ 音效系统 ============
+let audioCtx;
+function initAudio() {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playSound(type) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    switch(type) {
+        case 'shoot':
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+            // 添加噪声
+            const noise = audioCtx.createBufferSource();
+            const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.05, audioCtx.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < data.length; i++) data[i] = (Math.random()*2-1) * 0.3;
+            noise.buffer = buf;
+            const ng = audioCtx.createGain();
+            ng.gain.setValueAtTime(0.4, audioCtx.currentTime);
+            ng.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+            noise.connect(ng); ng.connect(audioCtx.destination);
+            noise.start(); noise.stop(audioCtx.currentTime + 0.05);
+            break;
+        case 'reload':
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+            break;
+        case 'kill':
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+            osc.frequency.setValueAtTime(1100, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+            break;
+        case 'death':
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.5);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+            break;
+        case 'empty':
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.05);
+            break;
+        case 'knife':
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.15);
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+            break;
+    }
+}
+
+// ============ 工具函数 ============
+function shadeColor(color, percent) {
+    const num = parseInt(color.replace('#',''), 16);
+    const amt = Math.round(2.55 * percent);
+    const R = Math.min(255, Math.max(0, (num >> 16) + amt));
+    const G = Math.min(255, Math.max(0, (num >> 8 & 0x00FF) + amt));
+    const B = Math.min(255, Math.max(0, (num & 0x0000FF) + amt));
+    return `rgb(${R},${G},${B})`;
+}
+
+// ============ 鼠标控制 ============
+canvas.addEventListener('click', () => {
+    if (gameRunning) canvas.requestPointerLock();
+});
+
+document.addEventListener('pointerlockchange', () => {
+    if (document.pointerLockElement === canvas) {
+        document.getElementById('crosshair').style.display = 'block';
+    } else {
+        document.getElementById('crosshair').style.display = 'none';
+    }
+});
+
+document.addEventListener('mousemove', e => {
+    if (document.pointerLockElement !== canvas || !gameRunning) return;
+    player.yaw += e.movementX * 0.002;
+    player.pitch -= e.movementY * 0.002;
+    player.pitch = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, player.pitch));
+});
+
+document.addEventListener('mousedown', e => {
+    if (document.pointerLockElement !== canvas || !gameRunning) return;
+    if (e.button === 0) {
+        mouseDown = true;
+        shoot();
+    }
+});
+
+document.addEventListener('mouseup', e => {
+    if (e.button === 0) mouseDown = false;
+});
+
+// 防止右键菜单
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ============ 游戏循环 ============
+let lastTime = 0;
+function gameLoop(timestamp) {
+    const dt = timestamp - lastTime;
+    lastTime = timestamp;
+
+    if (gameRunning) {
+        updatePlayer(dt);
+        updateBots(dt);
+        updateParticles(dt);
+        render();
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+// ============ 开始游戏 ============
+function startGame(mapName) {
+    currentMap = mapName;
+    generateMap(mapName);
+    initBots();
+
+    const map = maps[mapName];
+    player.x = map.spawnCT.x;
+    player.y = 0;
+    player.z = map.spawnCT.z;
+    player.yaw = 0;
+    player.pitch = 0;
+    player.health = 100;
+    player.armor = 100;
+    player.kills = 0;
+    player.deaths = 0;
+
+    // 重置武器弹药
+    Object.values(weapons).forEach(w => {
+        if (w.magSize !== Infinity) w.ammo = w.magSize;
+    });
+
+    currentWeapon = 'ak47';
+    currentSlot = 1;
+    weaponSlots = ['knife', mapName === 'de_dust2' ? 'ak47' : 'm4a1', 'glock'];
+
+    document.getElementById('main-menu').style.display = 'none';
+    document.getElementById('hud').style.display = 'block';
+    document.getElementById('kill-feed').style.display = 'block';
+    document.getElementById('score-board').style.display = 'block';
+    document.getElementById('minimap').style.display = 'block';
+
+    gameRunning = true;
+    initAudio();
+    updateHUD();
+
+    // 回合提示
+    const ri = document.getElementById('round-info');
+    ri.textContent = `Round ${roundNum} - ${mapName}`;
+    ri.style.display = 'block';
+    setTimeout(() => ri.style.display = 'none', 2000);
+
+    canvas.requestPointerLock();
+}
+
+// 启动渲染循环
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
