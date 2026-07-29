@@ -210,8 +210,9 @@ const player = { x: spawnX, y: spawnY, ang: 0, pitch: 0, hp: 100, armor: 0, mone
 let inv = null, curW = 'usp';
 
 /* ---------------- 游戏状态 ---------------- */
-let state = 'menu'; // menu | settings | play | roundend
+let state = 'menu'; // menu | settings | play | roundend | gameover
 let paused = false, buyOpen = false;
+let pauseMenuOpen = false; // in-game pause menu with home button
 let round = 1, scoreCT = 0, scoreT = 0, kills = 0;
 let roundTime = 0, buyT = 0, roundEndT = 0, roundMsg = '', roundMsgColor = '#fff';
 let enemies = [], allies = [], feed = [];
@@ -282,10 +283,16 @@ function startRound() {
   sfx.begin();
 }
 function endRound(win, msg) {
-  state = 'roundend'; roundEndT = 4;
+  state = 'roundend'; roundEndT = 9999;
   roundMsg = msg; roundMsgColor = win ? '#6db2ff' : '#ff5544';
   if (win) { scoreCT++; player.money = Math.min(16000, player.money + 1400); }
   else scoreT++;
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+}
+function goMenu() {
+  state = 'menu'; paused = false; pauseMenuOpen = false; buyOpen = false;
+  mouseDown = false;
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
 }
 
 /* ---------------- 射线 ---------------- */
@@ -507,12 +514,8 @@ function updateAlly(a, dt) {
 
 /* ---------------- 更新 ---------------- */
 function update(dt) {
-  if (state === 'roundend') {
-    roundEndT -= dt;
-    if (roundEndT <= 0) { round++; startRound(); }
-  }
-  if (state !== 'play' && state !== 'roundend') return;
-  if (paused) return;
+  if (state !== 'play') return;
+  if (paused || pauseMenuOpen) return;
 
   if (state === 'play' && player.hp > 0) {
     roundTime -= dt; buyT = Math.max(0, buyT - dt);
@@ -645,7 +648,7 @@ function render() {
     }
   }
 
-  if (state === 'play' || state === 'roundend') {
+  if (state === 'play') {
     drawWeapon();
     drawHUD();
   }
@@ -656,25 +659,74 @@ function render() {
   if (buyOpen) drawBuyMenu();
   if (state === 'menu')     drawMenu();
   if (state === 'settings') drawSettings();
-  if (state === 'roundend') {
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 42px monospace';
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, H / 2 - 60, W, 120);
-    ctx.fillStyle = roundMsgColor;
-    ctx.fillText(roundMsg, W / 2, H / 2);
-    ctx.font = '18px monospace'; ctx.fillStyle = '#ccc';
-    ctx.fillText('下一回合 ' + Math.ceil(roundEndT) + ' 秒后开始...', W / 2, H / 2 + 36);
-    ctx.textAlign = 'left';
-  }
-  if (paused && state === 'play') {
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
-    ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
-    ctx.font = 'bold 36px monospace';
-    ctx.fillText('已暂停', W / 2, H / 2 - 10);
-    ctx.font = '18px monospace';
-    ctx.fillText('点击屏幕继续', W / 2, H / 2 + 28);
-    ctx.textAlign = 'left';
-  }
+  if (state === 'roundend') drawRoundEnd();
+  if (pauseMenuOpen)        drawPauseMenu();
+}
+
+function drawRoundEnd() {
+  ctx.fillStyle = 'rgba(0,0,0,0.72)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+
+  // 结果标题
+  ctx.font = 'bold 48px monospace';
+  ctx.fillStyle = roundMsgColor;
+  ctx.fillText(roundMsg, W / 2, H / 2 - 80);
+
+  // 本局统计
+  ctx.font = '20px monospace'; ctx.fillStyle = '#bbb';
+  ctx.fillText('第 ' + round + ' 回合   CT ' + scoreCT + ' : ' + scoreT + ' T   击杀 ' + kills, W / 2, H / 2 - 36);
+
+  // 继续下一局按钮
+  ctx.fillStyle = 'rgba(40,110,40,0.9)';
+  ctx.fillRect(W / 2 - 170, H / 2, 320, 54);
+  ctx.strokeStyle = '#9ee65a'; ctx.lineWidth = 2;
+  ctx.strokeRect(W / 2 - 170, H / 2, 320, 54);
+  ctx.fillStyle = '#9ee65a'; ctx.font = 'bold 22px monospace';
+  ctx.fillText('继续下一局  →', W / 2 - 10, H / 2 + 34);
+
+  // 返回主页按钮
+  ctx.fillStyle = 'rgba(80,40,40,0.9)';
+  ctx.fillRect(W / 2 - 170, H / 2 + 70, 320, 54);
+  ctx.strokeStyle = '#f87'; ctx.lineWidth = 2;
+  ctx.strokeRect(W / 2 - 170, H / 2 + 70, 320, 54);
+  ctx.fillStyle = '#f87'; ctx.font = 'bold 22px monospace';
+  ctx.fillText('⌂ 返回主页', W / 2 - 10, H / 2 + 104);
+
+  ctx.textAlign = 'left';
+}
+
+function drawPauseMenu() {
+  ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+
+  ctx.fillStyle = 'rgba(15,20,30,0.95)';
+  ctx.fillRect(W / 2 - 180, H / 2 - 130, 360, 280);
+  ctx.strokeStyle = '#556'; ctx.lineWidth = 2;
+  ctx.strokeRect(W / 2 - 180, H / 2 - 130, 360, 280);
+
+  ctx.fillStyle = '#ddd'; ctx.font = 'bold 32px monospace';
+  ctx.fillText('已 暂 停', W / 2, H / 2 - 80);
+
+  // 继续游戏
+  ctx.fillStyle = 'rgba(40,80,40,0.9)';
+  ctx.fillRect(W / 2 - 140, H / 2 - 48, 280, 50);
+  ctx.strokeStyle = '#9ee65a'; ctx.lineWidth = 2;
+  ctx.strokeRect(W / 2 - 140, H / 2 - 48, 280, 50);
+  ctx.fillStyle = '#9ee65a'; ctx.font = 'bold 20px monospace';
+  ctx.fillText('继续游戏', W / 2, H / 2 - 16);
+
+  // 返回主页
+  ctx.fillStyle = 'rgba(80,30,30,0.9)';
+  ctx.fillRect(W / 2 - 140, H / 2 + 20, 280, 50);
+  ctx.strokeStyle = '#f87'; ctx.lineWidth = 2;
+  ctx.strokeRect(W / 2 - 140, H / 2 + 20, 280, 50);
+  ctx.fillStyle = '#f87'; ctx.font = 'bold 20px monospace';
+  ctx.fillText('⌂ 返回主页', W / 2, H / 2 + 52);
+
+  ctx.fillStyle = '#555'; ctx.font = '14px monospace';
+  ctx.fillText('点击屏幕 或 ESC 继续游戏', W / 2, H / 2 + 110);
+
+  ctx.textAlign = 'left';
 }
 
 function drawWeapon() {
@@ -882,7 +934,7 @@ function drawMenu() {
   ];
   lines.forEach((l, i) => ctx.fillText(l, W / 2, 390 + i * 30));
   ctx.fillStyle = '#555'; ctx.font = '14px monospace';
-  ctx.fillText('ESC 释放鼠标 / 暂停', W / 2, 502);
+  ctx.fillText('ESC 暂停 / 返回主页', W / 2, 502);
   ctx.textAlign = 'left';
 }
 
@@ -972,20 +1024,26 @@ addEventListener('keydown', e => {
   if (keys[e.code]) return;
   keys[e.code] = true;
 
-  // 设置界面按键
+  // 设置界面
   if (state === 'settings') {
-    if (e.code === 'ArrowUp')   { settingsFocus = (settingsFocus - 1 + SETTING_ITEMS.length) % SETTING_ITEMS.length; return; }
-    if (e.code === 'ArrowDown') { settingsFocus = (settingsFocus + 1) % SETTING_ITEMS.length; return; }
-    if (e.code === 'ArrowLeft'  || e.code === 'Minus')  { adjustSetting(settingsFocus, -1); return; }
-    if (e.code === 'ArrowRight' || e.code === 'Equal')  { adjustSetting(settingsFocus, +1); return; }
-    if (e.code === 'Enter' || e.code === 'Escape')      { state = 'menu'; return; }
+    if (e.code === 'ArrowUp')                          { settingsFocus = (settingsFocus - 1 + SETTING_ITEMS.length) % SETTING_ITEMS.length; return; }
+    if (e.code === 'ArrowDown')                        { settingsFocus = (settingsFocus + 1) % SETTING_ITEMS.length; return; }
+    if (e.code === 'ArrowLeft'  || e.code === 'Minus') { adjustSetting(settingsFocus, -1); return; }
+    if (e.code === 'ArrowRight' || e.code === 'Equal') { adjustSetting(settingsFocus, +1); return; }
+    if (e.code === 'Enter' || e.code === 'Escape')     { state = 'menu'; return; }
     return;
   }
 
-  // 主菜单
-  if (state === 'menu') return;
+  // 主菜单 / 回合结束
+  if (state === 'menu' || state === 'roundend') return;
 
-  if (state !== 'play' || paused) return;
+  // 游戏中 ESC → 开/关暂停菜单
+  if (e.code === 'Escape') {
+    if (state === 'play') { pauseMenuOpen = !pauseMenuOpen; mouseDown = false; }
+    return;
+  }
+
+  if (state !== 'play' || pauseMenuOpen) return;
   if (e.code === 'KeyR') startReload();
   if (e.code === 'KeyB') {
     if (buyT > 0) { buyOpen = !buyOpen; }
@@ -1025,64 +1083,82 @@ canvas.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   mouseDown = true;
 
-  // 设置界面点击
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width, scaleY = H / rect.height;
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top) * scaleY;
+
+  // 设置界面
   if (state === 'settings') {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = W / rect.width, scaleY = H / rect.height;
-    const mx = (e.clientX - rect.left) * scaleX;
-    const my = (e.clientY - rect.top) * scaleY;
     const rowH = 90, startY = 155;
-    // 检查每行的 − / + 按钮
     SETTING_ITEMS.forEach((item, i) => {
       const y = startY + i * rowH;
       if (my >= y + 34 && my <= y + 60) {
-        if (mx >= W / 2 - 20 && mx <= W / 2 + 12) adjustSetting(i, -1);
+        if (mx >= W / 2 - 20 && mx <= W / 2 + 12)  adjustSetting(i, -1);
         if (mx >= W / 2 + 78 && mx <= W / 2 + 110) adjustSetting(i, +1);
         settingsFocus = i;
       }
     });
-    // 确认并返回按钮
     const btnY = startY + SETTING_ITEMS.length * rowH + 55;
-    if (mx >= W / 2 - 130 && mx <= W / 2 + 130 && my >= btnY && my <= btnY + 46) {
-      state = 'menu';
-    }
+    if (mx >= W / 2 - 130 && mx <= W / 2 + 130 && my >= btnY && my <= btnY + 46) state = 'menu';
     return;
   }
 
-  // 主菜单点击
+  // 主菜单
   if (state === 'menu') {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = W / rect.width, scaleY = H / rect.height;
-    const mx = (e.clientX - rect.left) * scaleX;
-    const my = (e.clientY - rect.top) * scaleY;
-    // 设置按钮区域
-    if (mx >= W / 2 - 160 && mx <= W / 2 + 160 && my >= 270 && my <= 318) {
-      state = 'settings';
+    if (mx >= W / 2 - 160 && mx <= W / 2 + 160 && my >= 270 && my <= 318) { state = 'settings'; return; }
+    audio(); startGame(); canvas.requestPointerLock();
+    return;
+  }
+
+  // 回合结束界面
+  if (state === 'roundend') {
+    // 继续下一局
+    if (mx >= W / 2 - 170 && mx <= W / 2 + 150 && my >= H / 2 && my <= H / 2 + 54) {
+      round++; startRound(); canvas.requestPointerLock();
       return;
     }
-    // 开始游戏
-    audio();
-    startGame();
-    canvas.requestPointerLock();
+    // 返回主页
+    if (mx >= W / 2 - 170 && mx <= W / 2 + 150 && my >= H / 2 + 70 && my <= H / 2 + 124) {
+      goMenu();
+      return;
+    }
     return;
   }
 
-  if (document.pointerLockElement === canvas && state === 'play' && !paused && !buyOpen) {
+  // 暂停菜单
+  if (pauseMenuOpen) {
+    // 继续游戏
+    if (mx >= W / 2 - 140 && mx <= W / 2 + 140 && my >= H / 2 - 48 && my <= H / 2 + 2) {
+      pauseMenuOpen = false; canvas.requestPointerLock();
+      return;
+    }
+    // 返回主页
+    if (mx >= W / 2 - 140 && mx <= W / 2 + 140 && my >= H / 2 + 20 && my <= H / 2 + 70) {
+      goMenu();
+      return;
+    }
+    // 点击面板外区域也继续游戏
+    pauseMenuOpen = false; canvas.requestPointerLock();
+    return;
+  }
+
+  if (document.pointerLockElement === canvas && state === 'play' && !buyOpen) {
     if (!WEAPONS[curW].auto) tryFire();
   }
 });
 addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
 canvas.addEventListener('click', () => {
-  if (state === 'menu' || state === 'settings') return; // handled in mousedown
+  if (state === 'menu' || state === 'settings' || state === 'roundend') return;
   audio();
-  if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
+  if (!pauseMenuOpen && document.pointerLockElement !== canvas) canvas.requestPointerLock();
 });
 document.addEventListener('pointerlockchange', () => {
-  if (document.pointerLockElement === canvas) paused = false;
-  else if (state === 'play') { paused = true; mouseDown = false; }
+  if (document.pointerLockElement === canvas) { pauseMenuOpen = false; paused = false; }
+  else if (state === 'play') { pauseMenuOpen = true; paused = false; mouseDown = false; }
 });
 addEventListener('mousemove', e => {
-  if (document.pointerLockElement !== canvas || paused || buyOpen) return;
+  if (document.pointerLockElement !== canvas || pauseMenuOpen || buyOpen) return;
   player.ang += e.movementX * 0.0022;
   player.pitch = Math.max(-130, Math.min(130, player.pitch - e.movementY * 0.5));
 });
