@@ -1,5 +1,5 @@
 'use strict';
-/* Counter-Strike 1.6 Web - 纯前端射线投射FPS */
+/* Counter-Strike 1.6 Web — 纯前端射线投射FPS */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;
@@ -7,40 +7,21 @@ const COLW = 2, NUMRAYS = W / COLW;
 const FOV = Math.PI / 3;
 const PLANE = Math.tan(FOV / 2);
 
-/* ---------------- 地图 ---------------- */
-const MAPSRC = [
-"##########################",
-"#P.......#....#..T.....T.#",
-"#........#....#..........#",
-"#..BB....#.B..#....BB....#",
-"#..BB.........#..........#",
-"#........#....D....##....#",
-"####.#####....#....##....#",
-"#........#.DD.#..........#",
-"#..B.....#....#.....B..T.#",
-"#........D....#..........#",
-"#....#####....######.#####",
-"#....#...................#",
-"#.BB.#...BB....BB....B...#",
-"#....#...BB....BB........#",
-"#....D...................#",
-"#....#........##.....DD..#",
-"#....#........##.........#",
-"#....######.######...#####",
-"#..........T.........#..T#",
-"#....B...........B...#...#",
-"#####....#####........D..#",
-"#T.......#...#........#..#",
-"#........#.B.#..BB....#..#",
-"#...T....D...#..BB....#.T#",
-"#........#...#........#..#",
-"##########################",
-];
+/* ---------------- 游戏设置 (可在菜单中调整) ---------------- */
+const settings = {
+  allyCount:    1,   // CT 队友数量 0-4
+  enemyCount:   5,   // T 敌人数量  1-10
+  startMoney:   800, // 初始金额   800-16000
+};
+
+/* ---------------- 地图 (从 map_dust2.js 加载) ---------------- */
+const MAPSRC = MAP_DATA.src;
 const MH = MAPSRC.length;
 const MW = Math.max(...MAPSRC.map(r => r.length));
 const map = [];
 let spawnX = 2.5, spawnY = 2.5;
 const tSpawns = [];
+const ctSpawns = [];  // CT出生点 (靠近P的空地)
 for (let y = 0; y < MH; y++) {
   const row = MAPSRC[y].padEnd(MW, '#');
   const arr = [];
@@ -52,6 +33,17 @@ for (let y = 0; y < MH; y++) {
   }
   map.push(arr);
 }
+// 在玩家出生点附近生成CT出生点
+for (let ox = -3; ox <= 3; ox++) for (let oy = -3; oy <= 3; oy++) {
+  if (ox === 0 && oy === 0) continue;
+  const cx = (spawnX + ox) | 0, cy = (spawnY + oy) | 0;
+  if (cx > 0 && cy > 0 && cx < MW - 1 && cy < MH - 1 && map[cy][cx] === '.') {
+    ctSpawns.push([cx + 0.5, cy + 0.5]);
+    if (ctSpawns.length >= 12) break;
+  }
+  if (ctSpawns.length >= 12) break;
+}
+
 function solid(x, y) {
   if (x < 0 || y < 0 || x >= MW || y >= MH) return '#';
   const c = map[y | 0][x | 0];
@@ -65,7 +57,7 @@ function makeTex(fn) {
   fn(c.getContext('2d'));
   return c;
 }
-const texWall = makeTex(g => { // dust 沙墙
+const texWall = makeTex(g => {
   g.fillStyle = '#c9b184'; g.fillRect(0, 0, 64, 64);
   for (let i = 0; i < 500; i++) {
     g.fillStyle = 'rgba(0,0,0,' + Math.random() * 0.08 + ')';
@@ -76,7 +68,7 @@ const texWall = makeTex(g => { // dust 沙墙
   g.fillRect(20, 0, 2, 16); g.fillRect(44, 17, 2, 16); g.fillRect(12, 33, 2, 16); g.fillRect(50, 49, 2, 16);
   g.fillStyle = 'rgba(255,240,200,0.25)'; g.fillRect(0, 0, 64, 3);
 });
-const texCrate = makeTex(g => { // 木箱
+const texCrate = makeTex(g => {
   g.fillStyle = '#8a6a3c'; g.fillRect(0, 0, 64, 64);
   for (let i = 0; i < 300; i++) {
     g.fillStyle = 'rgba(60,40,10,' + Math.random() * 0.15 + ')';
@@ -85,7 +77,7 @@ const texCrate = makeTex(g => { // 木箱
   g.strokeStyle = '#5b4020'; g.lineWidth = 4; g.strokeRect(2, 2, 60, 60);
   g.beginPath(); g.moveTo(4, 4); g.lineTo(60, 60); g.moveTo(60, 4); g.lineTo(4, 60); g.stroke();
 });
-const texDark = makeTex(g => { // 石砖
+const texDark = makeTex(g => {
   g.fillStyle = '#7d7466'; g.fillRect(0, 0, 64, 64);
   for (let i = 0; i < 400; i++) {
     g.fillStyle = 'rgba(0,0,0,' + Math.random() * 0.12 + ')';
@@ -97,7 +89,7 @@ const texDark = makeTex(g => { // 石砖
 });
 function texFor(tile) { return tile === 'B' ? texCrate : tile === 'D' ? texDark : texWall; }
 
-/* 敌人贴图(恐怖分子) */
+/* 敌人精灵 (恐怖分子, 橄榄绿) */
 const enemyImg = (() => {
   const c = document.createElement('canvas'); c.width = 64; c.height = 128;
   const g = c.getContext('2d');
@@ -114,6 +106,31 @@ const enemyImg = (() => {
   g.fillStyle = '#5b3d1e'; g.fillRect(40, 63, 12, 11);
   return c;
 })();
+
+/* CT队友精灵 (蓝色装备) */
+const allyImg = (() => {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 128;
+  const g = c.getContext('2d');
+  // 腿
+  g.fillStyle = '#2a3f6a'; g.fillRect(22, 86, 8, 36); g.fillRect(34, 86, 8, 36);
+  g.fillStyle = '#111'; g.fillRect(20, 118, 12, 10); g.fillRect(33, 118, 12, 10);
+  // 躯干
+  g.fillStyle = '#3a5a9a'; g.fillRect(18, 50, 28, 38);
+  g.fillStyle = '#1e3060'; g.fillRect(22, 52, 20, 28);
+  // 手臂
+  g.fillStyle = '#3a5a9a'; g.fillRect(11, 52, 7, 26); g.fillRect(46, 52, 7, 26);
+  g.fillStyle = '#c69c6d'; g.fillRect(11, 78, 7, 7); g.fillRect(46, 78, 7, 7);
+  // 头
+  g.fillStyle = '#c69c6d'; g.fillRect(24, 26, 16, 20);
+  g.fillStyle = '#1a3060'; g.fillRect(22, 18, 20, 14);
+  g.fillStyle = '#111'; g.fillRect(27, 36, 3, 3); g.fillRect(34, 36, 3, 3);
+  // 武器
+  g.fillStyle = '#222'; g.fillRect(6, 66, 50, 6);
+  g.fillStyle = '#333'; g.fillRect(40, 63, 12, 11);
+  return c;
+})();
+
+/* 尸体精灵 */
 const corpseImg = (() => {
   const c = document.createElement('canvas'); c.width = 64; c.height = 24;
   const g = c.getContext('2d');
@@ -121,6 +138,18 @@ const corpseImg = (() => {
   g.beginPath(); g.ellipse(32, 16, 30, 7, 0, 0, 7); g.fill();
   g.fillStyle = '#5a5f3f'; g.fillRect(8, 8, 34, 8);
   g.fillStyle = '#3b3f2a'; g.fillRect(24, 7, 18, 10);
+  g.fillStyle = '#c69c6d'; g.fillRect(44, 6, 10, 10);
+  return c;
+})();
+
+/* CT队友尸体精灵 */
+const allyCorpseImg = (() => {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 24;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(20,20,120,0.7)';
+  g.beginPath(); g.ellipse(32, 16, 30, 7, 0, 0, 7); g.fill();
+  g.fillStyle = '#3a5a9a'; g.fillRect(8, 8, 34, 8);
+  g.fillStyle = '#1e3060'; g.fillRect(24, 7, 18, 10);
   g.fillStyle = '#c69c6d'; g.fillRect(44, 6, 10, 10);
   return c;
 })();
@@ -140,55 +169,59 @@ function noiseShot(vol, freq, dur) {
     for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
     const src = ac.createBufferSource(); src.buffer = buf;
     const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = freq;
-    const g = ac.createGain(); g.gain.value = vol;
-    src.connect(f); f.connect(g); g.connect(ac.destination);
+    const gn = ac.createGain(); gn.gain.value = vol;
+    src.connect(f); f.connect(gn); gn.connect(ac.destination);
     src.start();
   } catch (e) {}
 }
 function tone(freq, dur, vol, type, slide) {
   try {
     const ac = audio(), t = ac.currentTime;
-    const o = ac.createOscillator(), g = ac.createGain();
+    const o = ac.createOscillator(), gn = ac.createGain();
     o.type = type || 'square'; o.frequency.setValueAtTime(freq, t);
     if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + dur);
-    g.gain.setValueAtTime(vol, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    o.connect(g); g.connect(ac.destination);
+    gn.gain.setValueAtTime(vol, t);
+    gn.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(gn); gn.connect(ac.destination);
     o.start(t); o.stop(t + dur);
   } catch (e) {}
 }
 const sfx = {
-  shot: () => noiseShot(0.35, 3200, 0.14),
-  shotFar: d => noiseShot(Math.max(0.03, 0.22 - d * 0.012), 1200, 0.16),
-  hit: () => tone(700, 0.06, 0.12, 'square', 500),
-  death: () => tone(220, 0.3, 0.15, 'sawtooth', 60),
-  click: () => tone(1400, 0.04, 0.08, 'square'),
-  reload: () => { tone(900, 0.05, 0.1, 'square'); setTimeout(() => tone(600, 0.05, 0.1, 'square'), 140); },
-  swing: () => noiseShot(0.1, 900, 0.1),
-  hurt: () => tone(140, 0.18, 0.2, 'sawtooth', 80),
-  buy: () => { tone(880, 0.07, 0.1, 'sine'); setTimeout(() => tone(1320, 0.09, 0.1, 'sine'), 80); },
-  begin: () => { tone(660, 0.1, 0.12, 'sine'); setTimeout(() => tone(990, 0.15, 0.12, 'sine'), 120); },
+  shot:    () => noiseShot(0.35, 3200, 0.14),
+  shotFar: d  => noiseShot(Math.max(0.03, 0.22 - d * 0.012), 1200, 0.16),
+  allyShot:() => noiseShot(0.15, 2800, 0.12),
+  hit:     () => tone(700, 0.06, 0.12, 'square', 500),
+  death:   () => tone(220, 0.3, 0.15, 'sawtooth', 60),
+  click:   () => tone(1400, 0.04, 0.08, 'square'),
+  reload:  () => { tone(900, 0.05, 0.1, 'square'); setTimeout(() => tone(600, 0.05, 0.1, 'square'), 140); },
+  swing:   () => noiseShot(0.1, 900, 0.1),
+  hurt:    () => tone(140, 0.18, 0.2, 'sawtooth', 80),
+  buy:     () => { tone(880, 0.07, 0.1, 'sine'); setTimeout(() => tone(1320, 0.09, 0.1, 'sine'), 80); },
+  begin:   () => { tone(660, 0.1, 0.12, 'sine'); setTimeout(() => tone(990, 0.15, 0.12, 'sine'), 120); },
 };
 
-/* ---------------- 玩家 / 武器 ---------------- */
+/* ---------------- 武器 / 玩家 ---------------- */
 const WEAPONS = {
-  knife: { label: '军刀', dmg: 55, rof: 0.5, spread: 0, auto: false, melee: true, range: 1.8 },
-  usp:   { label: 'USP', dmg: 30, rof: 0.25, mag: 12, maxReserve: 100, spread: 0.02, auto: false },
-  ak:    { label: 'AK-47', dmg: 36, rof: 0.1, mag: 30, maxReserve: 90, spread: 0.032, auto: true },
+  knife: { label: '军刀',  dmg: 55,  rof: 0.5,  spread: 0,     auto: false, melee: true, range: 1.8 },
+  usp:   { label: 'USP',   dmg: 30,  rof: 0.25, mag: 12, maxReserve: 100, spread: 0.02,  auto: false },
+  ak:    { label: 'AK-47', dmg: 36,  rof: 0.1,  mag: 30, maxReserve: 90,  spread: 0.032, auto: true  },
 };
-const player = { x: spawnX, y: spawnY, ang: 0, pitch: 0, hp: 100, armor: 0, money: 800 };
+const player = { x: spawnX, y: spawnY, ang: 0, pitch: 0, hp: 100, armor: 0, money: settings.startMoney };
 let inv = null, curW = 'usp';
 
 /* ---------------- 游戏状态 ---------------- */
-let state = 'menu'; // menu | play | roundend
+let state = 'menu'; // menu | settings | play | roundend
 let paused = false, buyOpen = false;
 let round = 1, scoreCT = 0, scoreT = 0, kills = 0;
 let roundTime = 0, buyT = 0, roundEndT = 0, roundMsg = '', roundMsgColor = '#fff';
-let enemies = [], feed = [];
+let enemies = [], allies = [], feed = [];
 let fireCd = 0, reloading = 0, recoil = 0, muzzle = 0, dmgFlash = 0, hitMark = 0;
 let bobT = 0, moveAmt = 0, now = 0;
 const keys = {};
 let mouseDown = false;
+
+/* 设置菜单光标 */
+let settingsFocus = 0; // 0=allyCount,1=enemyCount,2=startMoney
 
 function addFeed(text, color) {
   feed.push({ text, color: color || '#ddd', t: now });
@@ -200,7 +233,8 @@ function resetInv() {
 }
 function startGame() {
   round = 1; scoreCT = 0; scoreT = 0; kills = 0;
-  player.money = 800; player.armor = 0;
+  player.money = settings.startMoney;
+  player.armor = 0;
   resetInv();
   startRound();
 }
@@ -213,16 +247,36 @@ function startRound() {
     const w = WEAPONS[k];
     if (w.mag) { inv[k].mag = w.mag; }
   }
-  const n = Math.min(4 + round, 10);
+
+  // 生成 T 敌人
+  const n = Math.min(settings.enemyCount + round - 1, 20);
   enemies = [];
   for (let i = 0; i < n; i++) {
     const s = tSpawns[i % tSpawns.length];
     enemies.push({
-      x: s[0] + (Math.random() - 0.5) * 0.5, y: s[1] + (Math.random() - 0.5) * 0.5,
-      hp: 100, alive: true, deadT: 0, cd: 1 + Math.random() * 2,
-      wdir: Math.random() * Math.PI * 2, wT: 0, flash: 0, hitT: -9, seen: false,
+      x: s[0] + (Math.random() - 0.5) * 0.5,
+      y: s[1] + (Math.random() - 0.5) * 0.5,
+      hp: 100, alive: true, deadT: 0,
+      cd: 1 + Math.random() * 2,
+      wdir: Math.random() * Math.PI * 2, wT: 0,
+      flash: 0, hitT: -9, seen: false,
     });
   }
+
+  // 生成 CT 队友
+  allies = [];
+  for (let i = 0; i < settings.allyCount; i++) {
+    const s = ctSpawns[i % ctSpawns.length];
+    allies.push({
+      x: s[0] + (Math.random() - 0.5) * 0.4,
+      y: s[1] + (Math.random() - 0.5) * 0.4,
+      hp: 100, alive: true, deadT: 0,
+      cd: 1 + Math.random() * 1.5,
+      wdir: 0, wT: 0,
+      flash: 0, hitT: -9,
+    });
+  }
+
   state = 'play';
   addFeed('第 ' + round + ' 回合开始 — 歼灭所有恐怖分子!', '#8ff03c');
   sfx.begin();
@@ -345,34 +399,109 @@ function damagePlayer(dmg) {
   }
 }
 
-/* ---------------- 敌人 AI ---------------- */
+/* ---------------- 敌人 AI (T) ---------------- */
 function updateEnemy(e, dt) {
   if (!e.alive) { e.deadT += dt; return; }
   e.flash = Math.max(0, e.flash - dt);
   const rx = player.x - e.x, ry = player.y - e.y;
   const d = Math.hypot(rx, ry);
   const los = d < 16 && hasLOS(e.x, e.y, player.x, player.y) && player.hp > 0;
-  if (los) {
+
+  // 也检测队友
+  let allyTarget = null, allyDist = 1e9;
+  for (const a of allies) {
+    if (!a.alive) continue;
+    const ad = Math.hypot(a.x - e.x, a.y - e.y);
+    if (ad < 12 && hasLOS(e.x, e.y, a.x, a.y) && ad < allyDist) {
+      allyTarget = a; allyDist = ad;
+    }
+  }
+
+  const target = los ? { x: player.x, y: player.y, dist: d, isPlayer: true }
+                     : (allyTarget ? { x: allyTarget.x, y: allyTarget.y, dist: allyDist, isPlayer: false, ally: allyTarget } : null);
+
+  if (target) {
     e.seen = true;
-    const a = Math.atan2(ry, rx);
-    if (d > 2.5) moveEntity(e, Math.cos(a) * 1.5 * dt, Math.sin(a) * 1.5 * dt);
+    const ta = Math.atan2(target.y - e.y, target.x - e.x);
+    if (target.dist > 2.5) moveEntity(e, Math.cos(ta) * 1.5 * dt, Math.sin(ta) * 1.5 * dt);
     e.cd -= dt;
-    if (e.cd <= 0 && d < 14) {
+    if (e.cd <= 0 && target.dist < 14) {
       e.cd = 0.7 + Math.random() * 0.9;
       e.flash = 0.08;
-      sfx.shotFar(d);
-      const chance = Math.max(0.12, 0.6 - d * 0.035);
-      if (Math.random() < chance) damagePlayer(8 + Math.random() * 14);
+      sfx.shotFar(target.dist);
+      const chance = Math.max(0.12, 0.6 - target.dist * 0.035);
+      if (Math.random() < chance) {
+        if (target.isPlayer) {
+          damagePlayer(8 + Math.random() * 14);
+        } else {
+          const a = target.ally;
+          a.hp -= Math.round(10 + Math.random() * 18);
+          a.hitT = now;
+          if (a.hp <= 0) {
+            a.alive = false; a.deadT = 0;
+            addFeed('CT队友阵亡', '#ff8866');
+          }
+        }
+      }
     }
   } else {
     e.wT -= dt;
     if (e.wT <= 0) {
       e.wT = 1 + Math.random() * 2;
-      e.wdir = e.seen ? Math.atan2(ry, rx) + (Math.random() - 0.5) : Math.random() * Math.PI * 2;
+      e.wdir = e.seen ? Math.atan2(player.y - e.y, player.x - e.x) + (Math.random() - 0.5) : Math.random() * Math.PI * 2;
     }
     const ox = e.x, oy = e.y;
     moveEntity(e, Math.cos(e.wdir) * 1.1 * dt, Math.sin(e.wdir) * 1.1 * dt);
     if (Math.abs(e.x - ox) < 0.001 && Math.abs(e.y - oy) < 0.001) e.wT = 0;
+  }
+}
+
+/* ---------------- 队友 AI (CT) ---------------- */
+function updateAlly(a, dt) {
+  if (!a.alive) { a.deadT += dt; return; }
+  a.flash = Math.max(0, a.flash - dt);
+
+  // 找最近可见敌人
+  let target = null, bestDist = 1e9;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    const d = Math.hypot(e.x - a.x, e.y - a.y);
+    if (d < 16 && d < bestDist && hasLOS(a.x, a.y, e.x, e.y)) {
+      target = e; bestDist = d;
+    }
+  }
+
+  if (target) {
+    const ta = Math.atan2(target.y - a.y, target.x - a.x);
+    // 保持适当距离, 不要贴着敌人
+    if (bestDist > 3.5) moveEntity(a, Math.cos(ta) * 1.4 * dt, Math.sin(ta) * 1.4 * dt);
+    a.cd -= dt;
+    if (a.cd <= 0 && bestDist < 13) {
+      a.cd = 0.8 + Math.random() * 1.0;
+      a.flash = 0.07;
+      sfx.allyShot();
+      const hitChance = Math.max(0.15, 0.55 - bestDist * 0.03);
+      if (Math.random() < hitChance) {
+        const hs = Math.random() < 0.15;
+        target.hp -= (22 + Math.random() * 14) * (hs ? 2.0 : 1);
+        target.hitT = now;
+        if (target.hp <= 0) {
+          target.alive = false; target.deadT = 0;
+          addFeed('CT队友 击杀了 恐怖分子', '#8ff03c');
+          sfx.death();
+          if (enemies.every(x => !x.alive)) endRound(true, '反恐精英获胜!');
+        }
+      }
+    }
+  } else {
+    // 跟随玩家
+    const pdx = player.x - a.x, pdy = player.y - a.y;
+    const pd = Math.hypot(pdx, pdy);
+    if (pd > 2.5) {
+      const spd = 2.0;
+      moveEntity(a, (pdx / pd) * spd * dt, (pdy / pd) * spd * dt);
+    }
+    a.cd -= dt;
   }
 }
 
@@ -391,9 +520,9 @@ function update(dt) {
     if (buyOpen && buyT <= 0) buyOpen = false;
 
     let mx = 0, my = 0;
-    if (keys.KeyW || keys.ArrowUp) mx += 1;
-    if (keys.KeyS || keys.ArrowDown) mx -= 1;
-    if (keys.KeyA || keys.ArrowLeft) my -= 1;
+    if (keys.KeyW || keys.ArrowUp)    mx += 1;
+    if (keys.KeyS || keys.ArrowDown)  mx -= 1;
+    if (keys.KeyA || keys.ArrowLeft)  my -= 1;
     if (keys.KeyD || keys.ArrowRight) my += 1;
     const len = Math.hypot(mx, my);
     if (len > 0) {
@@ -417,10 +546,11 @@ function update(dt) {
     }
     if (mouseDown && WEAPONS[curW].auto) tryFire();
     for (const e of enemies) updateEnemy(e, dt);
+    for (const a of allies) updateAlly(a, dt);
   }
-  muzzle = Math.max(0, muzzle - dt);
-  dmgFlash = Math.max(0, dmgFlash - dt * 1.5);
-  hitMark = Math.max(0, hitMark - dt);
+  muzzle     = Math.max(0, muzzle    - dt);
+  dmgFlash   = Math.max(0, dmgFlash  - dt * 1.5);
+  hitMark    = Math.max(0, hitMark   - dt);
 }
 
 /* ---------------- 渲染 ---------------- */
@@ -452,11 +582,18 @@ function render() {
     }
   }
 
-  // 敌人精灵
-  const order = enemies.map(e => ({ e, d: (e.x - player.x) ** 2 + (e.y - player.y) ** 2 }))
-    .sort((a, b) => b.d - a.d);
+  // 合并所有精灵并按距离排序 (从远到近)
+  const sprites = [];
+  for (const e of enemies) sprites.push({ obj: e, isAlly: false });
+  for (const a of allies)  sprites.push({ obj: a, isAlly: true  });
+  sprites.sort((a, b) => {
+    const da = (a.obj.x - player.x) ** 2 + (a.obj.y - player.y) ** 2;
+    const db = (b.obj.x - player.x) ** 2 + (b.obj.y - player.y) ** 2;
+    return db - da;
+  });
+
   const invDet = 1 / (planeX * dirY - dirX * planeY);
-  for (const { e } of order) {
+  for (const { obj: e, isAlly } of sprites) {
     if (!e.alive && e.deadT > 6) continue;
     const rx = e.x - player.x, ry = e.y - player.y;
     const tx = invDet * (dirY * rx - dirX * ry);
@@ -464,6 +601,9 @@ function render() {
     if (ty < 0.15) continue;
     const screenX = (W / 2) * (1 + tx / ty);
     const size = H / ty;
+    const img      = isAlly ? allyImg      : enemyImg;
+    const corpseI  = isAlly ? allyCorpseImg : corpseImg;
+
     if (e.alive) {
       const sh2 = size * 0.85, sw = sh2 * 0.5;
       const yB = horizon + size / 2, yT = yB - sh2;
@@ -472,15 +612,23 @@ function render() {
         const c = (x / COLW) | 0;
         if (zbuf[c] <= ty) continue;
         const sx = Math.min(63, Math.max(0, (x - x0) / sw * 64 | 0));
-        ctx.drawImage(enemyImg, sx, 0, Math.max(1, 64 * COLW / sw), 128, x, yT, COLW, sh2);
+        ctx.drawImage(img, sx, 0, Math.max(1, 64 * COLW / sw), 128, x, yT, COLW, sh2);
       }
       if (now - e.hitT < 0.15) {
         ctx.fillStyle = 'rgba(200,20,20,0.6)';
         ctx.beginPath(); ctx.arc(screenX, yT + sh2 * 0.35, size * 0.05, 0, 7); ctx.fill();
       }
       if (e.flash > 0 && zbuf[Math.min(NUMRAYS - 1, Math.max(0, screenX / COLW | 0))] > ty) {
-        ctx.fillStyle = 'rgba(255,230,120,0.9)';
+        ctx.fillStyle = isAlly ? 'rgba(120,220,255,0.85)' : 'rgba(255,230,120,0.9)';
         ctx.beginPath(); ctx.arc(screenX - sw * 0.35, yT + sh2 * 0.45, size * 0.03, 0, 7); ctx.fill();
+      }
+      // 队友头顶名字标签
+      if (isAlly) {
+        ctx.globalAlpha = Math.min(1, 1 / ty * 3);
+        ctx.fillStyle = '#4af'; ctx.textAlign = 'center';
+        ctx.font = Math.max(8, 14 / ty | 0) + 'px monospace';
+        ctx.fillText('CT', screenX, yT - 4);
+        ctx.globalAlpha = 1; ctx.textAlign = 'left';
       }
     } else {
       const cw = size * 0.8, chh = size * 0.22;
@@ -491,7 +639,7 @@ function render() {
         const c = (x / COLW) | 0;
         if (zbuf[c] <= ty) continue;
         const sx = Math.min(63, Math.max(0, (x - x0) / cw * 64 | 0));
-        ctx.drawImage(corpseImg, sx, 0, Math.max(1, 64 * COLW / cw), 24, x, yB - chh, COLW, chh);
+        ctx.drawImage(corpseI, sx, 0, Math.max(1, 64 * COLW / cw), 24, x, yB - chh, COLW, chh);
       }
       ctx.globalAlpha = 1;
     }
@@ -506,7 +654,8 @@ function render() {
     ctx.fillRect(0, 0, W, H);
   }
   if (buyOpen) drawBuyMenu();
-  if (state === 'menu') drawMenu();
+  if (state === 'menu')     drawMenu();
+  if (state === 'settings') drawSettings();
   if (state === 'roundend') {
     ctx.textAlign = 'center';
     ctx.font = 'bold 42px monospace';
@@ -573,9 +722,9 @@ function drawWeapon() {
   ctx.strokeStyle = 'rgba(80,255,80,0.9)'; ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(W / 2 - gap - 8, H / 2); ctx.lineTo(W / 2 - gap, H / 2);
-  ctx.moveTo(W / 2 + gap, H / 2); ctx.lineTo(W / 2 + gap + 8, H / 2);
+  ctx.moveTo(W / 2 + gap, H / 2);     ctx.lineTo(W / 2 + gap + 8, H / 2);
   ctx.moveTo(W / 2, H / 2 - gap - 8); ctx.lineTo(W / 2, H / 2 - gap);
-  ctx.moveTo(W / 2, H / 2 + gap); ctx.lineTo(W / 2, H / 2 + gap + 8);
+  ctx.moveTo(W / 2, H / 2 + gap);     ctx.lineTo(W / 2, H / 2 + gap + 8);
   ctx.stroke();
   if (hitMark > 0) {
     ctx.strokeStyle = 'rgba(255,255,255,0.95)';
@@ -592,22 +741,20 @@ const GREEN = '#9ee65a';
 function drawHUD() {
   const w = WEAPONS[curW], st = curState();
   ctx.font = 'bold 26px monospace';
-  // 生命 / 护甲
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(10, H - 46, 250, 36);
   ctx.fillStyle = player.hp > 25 ? GREEN : '#ff5544';
   ctx.fillText('♥ ' + player.hp, 22, H - 19);
   ctx.fillStyle = GREEN;
   ctx.fillText('◘ ' + player.armor, 130, H - 19);
-  // 金钱
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(10, H - 90, 130, 36);
   ctx.fillStyle = GREEN; ctx.fillText('$ ' + player.money, 22, H - 63);
-  // 弹药
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(W - 250, H - 46, 240, 36);
   ctx.fillStyle = GREEN; ctx.textAlign = 'right';
   if (w.melee) ctx.fillText(w.label, W - 22, H - 19);
   else ctx.fillText(w.label + '  ' + (reloading > 0 ? '装填中...' : st.mag + ' / ' + st.reserve), W - 22, H - 19);
   ctx.textAlign = 'left';
-  // 顶部: 时间 / 比分
+
+  // 顶部: 比分 / 计时
   const t = Math.max(0, roundTime | 0);
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(W / 2 - 110, 8, 220, 30);
@@ -618,6 +765,16 @@ function drawHUD() {
     ctx.fillText('购买时间 ' + Math.ceil(buyT) + 's — 按 B 打开购买菜单', W / 2, 56);
   }
   ctx.textAlign = 'left';
+
+  // 队友存活指示
+  if (allies.length > 0) {
+    ctx.font = '14px monospace';
+    const aliveCount = allies.filter(a => a.alive).length;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(10, H - 120, 130, 24);
+    ctx.fillStyle = aliveCount > 0 ? '#4af' : '#f64';
+    ctx.fillText('队友: ' + aliveCount + '/' + allies.length, 18, H - 102);
+  }
+
   // 击杀信息
   ctx.font = '15px monospace';
   for (let i = 0; i < feed.length; i++) {
@@ -631,6 +788,7 @@ function drawHUD() {
     ctx.globalAlpha = 1;
   }
   ctx.textAlign = 'left';
+
   // 小地图
   const ms = 4, mx0 = 10, my0 = 10;
   ctx.globalAlpha = 0.75;
@@ -647,6 +805,11 @@ function drawHUD() {
     if (!e.alive || !e.seen) continue;
     ctx.fillStyle = '#ff4030';
     ctx.fillRect(mx0 + e.x * ms - 2, my0 + e.y * ms - 2, 4, 4);
+  }
+  for (const a of allies) {
+    if (!a.alive) continue;
+    ctx.fillStyle = '#44aaff';
+    ctx.fillRect(mx0 + a.x * ms - 2, my0 + a.y * ms - 2, 4, 4);
   }
   ctx.fillStyle = '#40ff40';
   ctx.fillRect(mx0 + player.x * ms - 2, my0 + player.y * ms - 2, 4, 4);
@@ -675,8 +838,8 @@ function drawBuyMenu() {
   ctx.fillText('3.  补满弹药', x, 265);
   ctx.textAlign = 'right'; ctx.fillStyle = '#ffd24a';
   ctx.fillText('$2500', W / 2 + 190, 195);
-  ctx.fillText('$650', W / 2 + 190, 230);
-  ctx.fillText('$300', W / 2 + 190, 265);
+  ctx.fillText('$650',  W / 2 + 190, 230);
+  ctx.fillText('$300',  W / 2 + 190, 265);
   ctx.textAlign = 'center'; ctx.fillStyle = '#aaa'; ctx.font = '15px monospace';
   ctx.fillText('当前资金: $' + player.money + '    按 B 关闭', W / 2, 340);
   ctx.textAlign = 'left';
@@ -689,21 +852,118 @@ function drawMenu() {
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';
   ctx.fillStyle = '#d8d2b8'; ctx.font = 'bold 64px monospace';
-  ctx.fillText('COUNTER-STRIKE', W / 2, 150);
+  ctx.fillText('COUNTER-STRIKE', W / 2, 130);
   ctx.fillStyle = '#ff9f21'; ctx.font = 'bold 34px monospace';
-  ctx.fillText('1.6 WEB', W / 2, 200);
+  ctx.fillText('1.6 WEB', W / 2, 178);
+
+  // 开始按钮
+  ctx.fillStyle = 'rgba(60,120,60,0.85)';
+  ctx.fillRect(W / 2 - 160, 205, 320, 52);
+  ctx.strokeStyle = GREEN; ctx.lineWidth = 2; ctx.strokeRect(W / 2 - 160, 205, 320, 52);
   ctx.fillStyle = GREEN; ctx.font = 'bold 26px monospace';
-  ctx.fillText('>> 点击屏幕开始游戏 <<', W / 2, 280);
+  ctx.fillText('>> 点击开始游戏 <<', W / 2, 240);
+
+  // 设置按钮
+  ctx.fillStyle = 'rgba(40,60,100,0.85)';
+  ctx.fillRect(W / 2 - 160, 270, 320, 48);
+  ctx.strokeStyle = '#6ab'; ctx.lineWidth = 2; ctx.strokeRect(W / 2 - 160, 270, 320, 48);
+  ctx.fillStyle = '#6ab'; ctx.font = 'bold 22px monospace';
+  ctx.fillText('设 置', W / 2, 302);
+
+  // 当前设置摘要
+  ctx.fillStyle = '#888'; ctx.font = '15px monospace';
+  ctx.fillText('队友: ' + settings.allyCount + '  敌人: ' + settings.enemyCount + '  初始金额: $' + settings.startMoney, W / 2, 345);
+
   ctx.fillStyle = '#bbb'; ctx.font = '17px monospace';
   const lines = [
     'WASD 移动    鼠标 转向/射击    Shift 静步',
     'R 换弹    B 购买菜单    1/2/3 切换 步枪/手枪/军刀',
     '任务: 歼灭全部恐怖分子 | 击杀 +$300, 胜利 +$1400',
   ];
-  lines.forEach((l, i) => ctx.fillText(l, W / 2, 340 + i * 30));
-  ctx.fillStyle = '#666'; ctx.font = '14px monospace';
-  ctx.fillText('ESC 释放鼠标 / 暂停', W / 2, 470);
+  lines.forEach((l, i) => ctx.fillText(l, W / 2, 390 + i * 30));
+  ctx.fillStyle = '#555'; ctx.font = '14px monospace';
+  ctx.fillText('ESC 释放鼠标 / 暂停', W / 2, 502);
   ctx.textAlign = 'left';
+}
+
+/* 设置界面 */
+function drawSettings() {
+  ctx.fillStyle = '#0a0e18'; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(W / 2, H / 2, 30, W / 2, H / 2, 500);
+  g.addColorStop(0, 'rgba(30,50,100,0.4)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#d8d2b8'; ctx.font = 'bold 42px monospace';
+  ctx.fillText('游 戏 设 置', W / 2, 90);
+
+  const items = [
+    { label: 'CT 队友人数',  key: 'allyCount',   min: 0,   max: 4,    step: 1    },
+    { label: 'T 敌人人数',   key: 'enemyCount',  min: 1,   max: 10,   step: 1    },
+    { label: '初始金额 ($)', key: 'startMoney',  min: 800, max: 16000, step: 200 },
+  ];
+
+  const rowH = 90, startY = 155;
+  items.forEach((item, i) => {
+    const y = startY + i * rowH;
+    const focused = settingsFocus === i;
+
+    ctx.fillStyle = focused ? 'rgba(40,80,160,0.6)' : 'rgba(20,30,50,0.5)';
+    ctx.fillRect(W / 2 - 280, y, 560, 72);
+    ctx.strokeStyle = focused ? '#6af' : '#334';
+    ctx.lineWidth = focused ? 2 : 1;
+    ctx.strokeRect(W / 2 - 280, y, 560, 72);
+
+    ctx.fillStyle = focused ? '#8cf' : '#aaa';
+    ctx.font = '18px monospace'; ctx.textAlign = 'left';
+    ctx.fillText(item.label, W / 2 - 260, y + 26);
+
+    // 减号按钮
+    ctx.fillStyle = '#555'; ctx.fillRect(W / 2 - 20, y + 34, 32, 26);
+    ctx.strokeStyle = '#888'; ctx.lineWidth = 1; ctx.strokeRect(W / 2 - 20, y + 34, 32, 26);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 20px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('−', W / 2 - 4, y + 53);
+
+    // 当前值
+    ctx.fillStyle = focused ? '#fff' : '#ccc';
+    ctx.font = 'bold 22px monospace';
+    ctx.fillText(settings[item.key], W / 2 + 48, y + 53);
+
+    // 加号按钮
+    ctx.fillStyle = '#555'; ctx.fillRect(W / 2 + 78, y + 34, 32, 26);
+    ctx.strokeStyle = '#888'; ctx.lineWidth = 1; ctx.strokeRect(W / 2 + 78, y + 34, 32, 26);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 20px monospace';
+    ctx.fillText('+', W / 2 + 94, y + 53);
+
+    // 范围提示
+    ctx.fillStyle = '#555'; ctx.font = '13px monospace';
+    ctx.fillText('[' + item.min + ' ~ ' + item.max + ']', W / 2 + 138, y + 53);
+  });
+
+  // 操作提示
+  ctx.fillStyle = '#6af'; ctx.font = '16px monospace';
+  ctx.fillText('↑↓ 选择    ← → 或 -/+ 调整    Enter 返回', W / 2, startY + items.length * rowH + 30);
+
+  // 返回按钮
+  ctx.fillStyle = 'rgba(60,80,40,0.85)';
+  ctx.fillRect(W / 2 - 130, startY + items.length * rowH + 55, 260, 46);
+  ctx.strokeStyle = GREEN; ctx.lineWidth = 2;
+  ctx.strokeRect(W / 2 - 130, startY + items.length * rowH + 55, 260, 46);
+  ctx.fillStyle = GREEN; ctx.font = 'bold 20px monospace';
+  ctx.fillText('确认并返回', W / 2, startY + items.length * rowH + 85);
+
+  ctx.textAlign = 'left';
+}
+
+/* ---------------- 设置菜单交互 ---------------- */
+const SETTING_ITEMS = [
+  { key: 'allyCount',   min: 0,    max: 4,     step: 1   },
+  { key: 'enemyCount',  min: 1,    max: 10,    step: 1   },
+  { key: 'startMoney',  min: 800,  max: 16000, step: 200 },
+];
+function adjustSetting(idx, dir) {
+  const s = SETTING_ITEMS[idx];
+  settings[s.key] = Math.min(s.max, Math.max(s.min, settings[s.key] + dir * s.step));
 }
 
 /* ---------------- 输入 ---------------- */
@@ -711,6 +971,20 @@ addEventListener('keydown', e => {
   if (['Tab', 'Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
   if (keys[e.code]) return;
   keys[e.code] = true;
+
+  // 设置界面按键
+  if (state === 'settings') {
+    if (e.code === 'ArrowUp')   { settingsFocus = (settingsFocus - 1 + SETTING_ITEMS.length) % SETTING_ITEMS.length; return; }
+    if (e.code === 'ArrowDown') { settingsFocus = (settingsFocus + 1) % SETTING_ITEMS.length; return; }
+    if (e.code === 'ArrowLeft'  || e.code === 'Minus')  { adjustSetting(settingsFocus, -1); return; }
+    if (e.code === 'ArrowRight' || e.code === 'Equal')  { adjustSetting(settingsFocus, +1); return; }
+    if (e.code === 'Enter' || e.code === 'Escape')      { state = 'menu'; return; }
+    return;
+  }
+
+  // 主菜单
+  if (state === 'menu') return;
+
   if (state !== 'play' || paused) return;
   if (e.code === 'KeyR') startReload();
   if (e.code === 'KeyB') {
@@ -750,14 +1024,57 @@ addEventListener('keyup', e => { keys[e.code] = false; });
 canvas.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   mouseDown = true;
+
+  // 设置界面点击
+  if (state === 'settings') {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = W / rect.width, scaleY = H / rect.height;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my = (e.clientY - rect.top) * scaleY;
+    const rowH = 90, startY = 155;
+    // 检查每行的 − / + 按钮
+    SETTING_ITEMS.forEach((item, i) => {
+      const y = startY + i * rowH;
+      if (my >= y + 34 && my <= y + 60) {
+        if (mx >= W / 2 - 20 && mx <= W / 2 + 12) adjustSetting(i, -1);
+        if (mx >= W / 2 + 78 && mx <= W / 2 + 110) adjustSetting(i, +1);
+        settingsFocus = i;
+      }
+    });
+    // 确认并返回按钮
+    const btnY = startY + SETTING_ITEMS.length * rowH + 55;
+    if (mx >= W / 2 - 130 && mx <= W / 2 + 130 && my >= btnY && my <= btnY + 46) {
+      state = 'menu';
+    }
+    return;
+  }
+
+  // 主菜单点击
+  if (state === 'menu') {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = W / rect.width, scaleY = H / rect.height;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my = (e.clientY - rect.top) * scaleY;
+    // 设置按钮区域
+    if (mx >= W / 2 - 160 && mx <= W / 2 + 160 && my >= 270 && my <= 318) {
+      state = 'settings';
+      return;
+    }
+    // 开始游戏
+    audio();
+    startGame();
+    canvas.requestPointerLock();
+    return;
+  }
+
   if (document.pointerLockElement === canvas && state === 'play' && !paused && !buyOpen) {
     if (!WEAPONS[curW].auto) tryFire();
   }
 });
 addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
 canvas.addEventListener('click', () => {
+  if (state === 'menu' || state === 'settings') return; // handled in mousedown
   audio();
-  if (state === 'menu') { startGame(); }
   if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
 });
 document.addEventListener('pointerlockchange', () => {
