@@ -885,8 +885,8 @@ function drawBuyMenu() {
   const x = W / 2 - 190;
   ctx.fillStyle = inv.ak ? '#777' : '#fff';
   ctx.fillText('1.  AK-47 突击步枪' + (inv.ak ? ' (已拥有)' : ''), x, 195);
-  ctx.fillStyle = '#fff';
-  ctx.fillText('2.  防弹衣 (护甲 100)', x, 230);
+  ctx.fillStyle = player.armor >= 100 ? '#777' : '#fff';
+  ctx.fillText('2.  防弹衣 (护甲 100)' + (player.armor >= 100 ? ' (已满)' : ''), x, 230);
   ctx.fillText('3.  补满弹药', x, 265);
   ctx.textAlign = 'right'; ctx.fillStyle = '#ffd24a';
   ctx.fillText('$2500', W / 2 + 190, 195);
@@ -1060,7 +1060,8 @@ addEventListener('keydown', e => {
       } else addFeed('资金不足', '#ff8866');
     }
     if (e.code === 'Digit2') {
-      if (player.money >= 650) { player.money -= 650; player.armor = 100; addFeed('购买了防弹衣', '#8ff03c'); sfx.buy(); }
+      if (player.armor >= 100) addFeed('防弹衣已满', '#ff8866');
+      else if (player.money >= 650) { player.money -= 650; player.armor = 100; addFeed('购买了防弹衣', '#8ff03c'); sfx.buy(); }
       else addFeed('资金不足', '#ff8866');
     }
     if (e.code === 'Digit3') {
