@@ -202,9 +202,9 @@ const sfx = {
 
 /* ---------------- 武器 / 玩家 ---------------- */
 const WEAPONS = {
-  knife: { label: '军刀',  dmg: 55,  rof: 0.5,  spread: 0,     auto: false, melee: true, range: 1.8 },
-  usp:   { label: 'USP',   dmg: 30,  rof: 0.25, mag: 12, maxReserve: 100, spread: 0.02,  auto: false },
-  ak:    { label: 'AK-47', dmg: 36,  rof: 0.1,  mag: 30, maxReserve: 90,  spread: 0.032, auto: true  },
+  knife: { label: '军刀',  dmg: 65,  rof: 0.42, spread: 0,     auto: false, melee: true, range: 2.0 },
+  usp:   { label: 'USP',   dmg: 38,  rof: 0.22, mag: 12, maxReserve: 100, spread: 0.018, auto: false },
+  ak:    { label: 'AK-47', dmg: 44,  rof: 0.09, mag: 30, maxReserve: 90,  spread: 0.028, auto: true  },
 };
 const player = { x: spawnX, y: spawnY, ang: 0, pitch: 0, hp: 100, armor: 0, money: settings.startMoney };
 let inv = null, curW = 'usp';
@@ -218,6 +218,7 @@ let roundTime = 0, buyT = 0, roundEndT = 0, roundMsg = '', roundMsgColor = '#fff
 let enemies = [], allies = [], feed = [];
 let fireCd = 0, reloading = 0, recoil = 0, muzzle = 0, dmgFlash = 0, hitMark = 0;
 let bobT = 0, moveAmt = 0, now = 0;
+let allyOrder = 'follow'; // 'follow' | 'attack' — F键切换
 const keys = {};
 let mouseDown = false;
 
@@ -412,14 +413,14 @@ function updateEnemy(e, dt) {
   e.flash = Math.max(0, e.flash - dt);
   const rx = player.x - e.x, ry = player.y - e.y;
   const d = Math.hypot(rx, ry);
-  const los = d < 16 && hasLOS(e.x, e.y, player.x, player.y) && player.hp > 0;
+  const los = d < 18 && hasLOS(e.x, e.y, player.x, player.y) && player.hp > 0;
 
   // 也检测队友
   let allyTarget = null, allyDist = 1e9;
   for (const a of allies) {
     if (!a.alive) continue;
     const ad = Math.hypot(a.x - e.x, a.y - e.y);
-    if (ad < 12 && hasLOS(e.x, e.y, a.x, a.y) && ad < allyDist) {
+    if (ad < 14 && hasLOS(e.x, e.y, a.x, a.y) && ad < allyDist) {
       allyTarget = a; allyDist = ad;
     }
   }
@@ -430,19 +431,19 @@ function updateEnemy(e, dt) {
   if (target) {
     e.seen = true;
     const ta = Math.atan2(target.y - e.y, target.x - e.x);
-    if (target.dist > 2.5) moveEntity(e, Math.cos(ta) * 1.5 * dt, Math.sin(ta) * 1.5 * dt);
+    if (target.dist > 2.5) moveEntity(e, Math.cos(ta) * 2.4 * dt, Math.sin(ta) * 2.4 * dt);
     e.cd -= dt;
-    if (e.cd <= 0 && target.dist < 14) {
-      e.cd = 0.7 + Math.random() * 0.9;
+    if (e.cd <= 0 && target.dist < 16) {
+      e.cd = 0.5 + Math.random() * 0.6;
       e.flash = 0.08;
       sfx.shotFar(target.dist);
-      const chance = Math.max(0.12, 0.6 - target.dist * 0.035);
+      const chance = Math.max(0.2, 0.72 - target.dist * 0.03);
       if (Math.random() < chance) {
         if (target.isPlayer) {
-          damagePlayer(8 + Math.random() * 14);
+          damagePlayer(15 + Math.random() * 17);
         } else {
           const a = target.ally;
-          a.hp -= Math.round(10 + Math.random() * 18);
+          a.hp -= Math.round(18 + Math.random() * 22);
           a.hitT = now;
           if (a.hp <= 0) {
             a.alive = false; a.deadT = 0;
@@ -454,11 +455,11 @@ function updateEnemy(e, dt) {
   } else {
     e.wT -= dt;
     if (e.wT <= 0) {
-      e.wT = 1 + Math.random() * 2;
-      e.wdir = e.seen ? Math.atan2(player.y - e.y, player.x - e.x) + (Math.random() - 0.5) : Math.random() * Math.PI * 2;
+      e.wT = 0.8 + Math.random() * 1.5;
+      e.wdir = e.seen ? Math.atan2(player.y - e.y, player.x - e.x) + (Math.random() - 0.5) * 0.8 : Math.random() * Math.PI * 2;
     }
     const ox = e.x, oy = e.y;
-    moveEntity(e, Math.cos(e.wdir) * 1.1 * dt, Math.sin(e.wdir) * 1.1 * dt);
+    moveEntity(e, Math.cos(e.wdir) * 1.8 * dt, Math.sin(e.wdir) * 1.8 * dt);
     if (Math.abs(e.x - ox) < 0.001 && Math.abs(e.y - oy) < 0.001) e.wT = 0;
   }
 }
@@ -468,26 +469,30 @@ function updateAlly(a, dt) {
   if (!a.alive) { a.deadT += dt; return; }
   a.flash = Math.max(0, a.flash - dt);
 
-  // 找最近可见敌人
+  const isAttack = allyOrder === 'attack';
+  const engageRange = isAttack ? 20 : 16;
+  const preferDist = isAttack ? 2.5 : 3.5;
+  const fireRateMul = isAttack ? 0.7 : 1.0;
+  const moveSpeed = isAttack ? 2.8 : 1.4;
+
   let target = null, bestDist = 1e9;
   for (const e of enemies) {
     if (!e.alive) continue;
     const d = Math.hypot(e.x - a.x, e.y - a.y);
-    if (d < 16 && d < bestDist && hasLOS(a.x, a.y, e.x, e.y)) {
+    if (d < engageRange && d < bestDist && hasLOS(a.x, a.y, e.x, e.y)) {
       target = e; bestDist = d;
     }
   }
 
   if (target) {
     const ta = Math.atan2(target.y - a.y, target.x - a.x);
-    // 保持适当距离, 不要贴着敌人
-    if (bestDist > 3.5) moveEntity(a, Math.cos(ta) * 1.4 * dt, Math.sin(ta) * 1.4 * dt);
+    if (bestDist > preferDist) moveEntity(a, Math.cos(ta) * moveSpeed * 2 * dt, Math.sin(ta) * moveSpeed * 2 * dt);
     a.cd -= dt;
-    if (a.cd <= 0 && bestDist < 13) {
-      a.cd = 0.8 + Math.random() * 1.0;
+    if (a.cd <= 0 && bestDist < engageRange * 0.8) {
+      a.cd = (0.8 + Math.random() * 1.0) * fireRateMul;
       a.flash = 0.07;
       sfx.allyShot();
-      const hitChance = Math.max(0.15, 0.55 - bestDist * 0.03);
+      const hitChance = Math.max(0.15, (isAttack ? 0.62 : 0.55) - bestDist * 0.03);
       if (Math.random() < hitChance) {
         const hs = Math.random() < 0.15;
         target.hp -= (22 + Math.random() * 14) * (hs ? 2.0 : 1);
@@ -500,8 +505,19 @@ function updateAlly(a, dt) {
         }
       }
     }
+  } else if (isAttack) {
+    let nearest = null, nd = 1e9;
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const d = Math.hypot(e.x - a.x, e.y - a.y);
+      if (d < nd) { nearest = e; nd = d; }
+    }
+    if (nearest) {
+      const ta = Math.atan2(nearest.y - a.y, nearest.x - a.x);
+      moveEntity(a, Math.cos(ta) * 2.6 * dt, Math.sin(ta) * 2.6 * dt);
+    }
+    a.cd -= dt;
   } else {
-    // 跟随玩家
     const pdx = player.x - a.x, pdy = player.y - a.y;
     const pd = Math.hypot(pdx, pdy);
     if (pd > 2.5) {
@@ -818,13 +834,14 @@ function drawHUD() {
   }
   ctx.textAlign = 'left';
 
-  // 队友存活指示
+  // 队友存活指示 + 指令模式
   if (allies.length > 0) {
     ctx.font = '14px monospace';
     const aliveCount = allies.filter(a => a.alive).length;
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(10, H - 120, 130, 24);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(10, H - 120, 170, 24);
     ctx.fillStyle = aliveCount > 0 ? '#4af' : '#f64';
-    ctx.fillText('队友: ' + aliveCount + '/' + allies.length, 18, H - 102);
+    const orderLabel = allyOrder === 'follow' ? '跟随' : '进攻';
+    ctx.fillText('队友: ' + aliveCount + '/' + allies.length + '  [' + orderLabel + ']', 18, H - 102);
   }
 
   // 击杀信息
@@ -932,6 +949,7 @@ function drawMenu() {
   const lines = [
     'WASD 移动    鼠标 转向/射击    Shift 静步',
     'R 换弹    B 购买菜单    1/2/3 切换 步枪/手枪/军刀',
+    'F 切换队友指令 (跟随/进攻)',
     '任务: 歼灭全部恐怖分子 | 击杀 +$300, 胜利 +$1400',
   ];
   lines.forEach((l, i) => ctx.fillText(l, W / 2, 390 + i * 30));
@@ -1047,6 +1065,11 @@ addEventListener('keydown', e => {
 
   if (state !== 'play' || pauseMenuOpen) return;
   if (e.code === 'KeyR') startReload();
+  if (e.code === 'KeyF') {
+    allyOrder = allyOrder === 'follow' ? 'attack' : 'follow';
+    addFeed('队友指令: ' + (allyOrder === 'follow' ? '跟随' : '进攻'), '#4af');
+    sfx.click();
+  }
   if (e.code === 'KeyB') {
     if (buyT > 0) { buyOpen = !buyOpen; }
     else addFeed('购买时间已结束', '#ff8866');
