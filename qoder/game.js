@@ -887,7 +887,9 @@ function drawBuyMenu() {
   ctx.fillText('1.  AK-47 突击步枪' + (inv.ak ? ' (已拥有)' : ''), x, 195);
   ctx.fillStyle = player.armor >= 100 ? '#777' : '#fff';
   ctx.fillText('2.  防弹衣 (护甲 100)' + (player.armor >= 100 ? ' (已满)' : ''), x, 230);
-  ctx.fillText('3.  补满弹药', x, 265);
+  const ammoFull = Object.keys(inv).every(k => !WEAPONS[k].mag || inv[k].reserve >= WEAPONS[k].maxReserve);
+  ctx.fillStyle = ammoFull ? '#777' : '#fff';
+  ctx.fillText('3.  补满弹药' + (ammoFull ? ' (已满)' : ''), x, 265);
   ctx.textAlign = 'right'; ctx.fillStyle = '#ffd24a';
   ctx.fillText('$2500', W / 2 + 190, 195);
   ctx.fillText('$650',  W / 2 + 190, 230);
@@ -1065,7 +1067,9 @@ addEventListener('keydown', e => {
       else addFeed('资金不足', '#ff8866');
     }
     if (e.code === 'Digit3') {
-      if (player.money >= 300) {
+      const alreadyFull = Object.keys(inv).every(k => !WEAPONS[k].mag || inv[k].reserve >= WEAPONS[k].maxReserve);
+      if (alreadyFull) addFeed('弹药已满', '#ff8866');
+      else if (player.money >= 300) {
         player.money -= 300;
         for (const k in inv) if (WEAPONS[k].mag) inv[k].reserve = WEAPONS[k].maxReserve;
         addFeed('弹药已补满', '#8ff03c'); sfx.buy();
