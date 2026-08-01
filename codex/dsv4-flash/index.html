@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>网页版 CS 风格 FPS</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="loading">正在从 CDN 加载 Three.js…</div>
+
+<!-- 主菜单 -->
+<div id="mainMenu" class="overlay show">
+  <div class="panel">
+    <h1>网页版 CS 风格 FPS</h1>
+    <p class="sub">回合制 · 下包/拆包 · 机器人对战 · 完全开源原创</p>
+    <div class="row">
+      <button id="teamT" class="btn t">匪徒 T（进攻下包）</button>
+      <button id="teamCT" class="btn ct">警察 CT（防守拆包）</button>
+    </div>
+    <div class="row">
+      <label>鼠标灵敏度 <input type="range" id="sens1" min="0.2" max="3" step="0.05" value="1"></label>
+    </div>
+    <div class="row">
+      <button id="muteBtn1" class="btn small">音效：开</button>
+    </div>
+    <button id="startBtn" class="btn primary">开始游戏</button>
+    <div class="controls">
+      <b>操作说明</b>
+      <span>WASD 移动 · 鼠标 瞄准 · 左键 射击 · 右键 开镜(仅AWP) · Shift 静步</span>
+      <span>空格 跳跃 · C 蹲下 · 1-5 切换武器 · R 换弹 · B 购买 · E 下包/拆包</span>
+      <span>Tab 计分板 · M 静音 · Esc 暂停</span>
+    </div>
+    <p class="sub">提示：本作是原创致敬作品，非 Valve 官方 CS1.6，素材全部程序化生成。</p>
+  </div>
+</div>
+
+<!-- 游戏 HUD -->
+<div id="hud" class="hidden">
+  <div id="crosshair">
+    <div class="ch-line top"></div>
+    <div class="ch-line bottom"></div>
+    <div class="ch-line left"></div>
+    <div class="ch-line right"></div>
+    <div class="ch-dot"></div>
+  </div>
+  <div id="hitmarker"></div>
+
+  <div id="topLeft">
+    <div id="roundText">第 1 回合</div>
+    <div id="timerText">--</div>
+  </div>
+  <div id="topCenter">
+    <div id="scoreText">T 0 : 0 CT</div>
+    <div id="bombTimerText" class="hidden">炸弹 45.0</div>
+  </div>
+  <div id="topRight">
+    <div id="moneyText">$800</div>
+  </div>
+
+  <canvas id="minimap" width="220" height="154"></canvas>
+
+  <div id="killfeed"></div>
+
+  <div id="bannerWrap">
+    <div id="banner"></div>
+    <div id="bannerSub"></div>
+  </div>
+
+  <div id="hint"></div>
+
+  <div id="bottomLeft">
+    <div class="barWrap"><div id="hpFill"></div><span id="hpText">100</span></div>
+    <div class="barWrap armor"><div id="armorFill"></div><span id="armorText"></span></div>
+  </div>
+  <div id="bottomRight">
+    <div id="weaponText">P9</div>
+    <div id="ammoText">12 / 24</div>
+  </div>
+
+  <div id="progressWrap" class="hidden">
+    <div id="progressText">正在安装炸弹…</div>
+    <div class="barWrap"><div id="progressFill"></div></div>
+  </div>
+
+  <div id="dmg"></div>
+  <div id="flash"></div>
+</div>
+
+<!-- 购买菜单 -->
+<div id="buyMenu" class="overlay">
+  <div class="panel buyPanel">
+    <div class="buyHead">
+      <h2>购买菜单</h2>
+      <span id="buyMoney">$800</span>
+      <button id="buyClose" class="btn small">关闭 (B)</button>
+    </div>
+    <div id="buyList"></div>
+    <p class="sub">只能在出生点购买区购买，按住 B 也可关闭</p>
+  </div>
+</div>
+
+<!-- 计分板 -->
+<div id="scoreboard" class="overlay">
+  <div class="panel">
+    <h2 id="sbTitle">计分板</h2>
+    <table id="sbTable"></table>
+    <p class="sub">松开 Tab 关闭</p>
+  </div>
+</div>
+
+<!-- 暂停菜单 -->
+<div id="pauseMenu" class="overlay">
+  <div class="panel">
+    <h2>已暂停</h2>
+    <div class="row"><label>鼠标灵敏度 <input type="range" id="sens2" min="0.2" max="3" step="0.05" value="1"></label></div>
+    <div class="row"><button id="muteBtn2" class="btn small">音效：开</button></div>
+    <button id="resumeBtn" class="btn primary">继续游戏</button>
+    <button id="restartBtn" class="btn">重新开始</button>
+  </div>
+</div>
+
+<!-- 死亡画面 -->
+<div id="deathOverlay" class="overlay">
+  <div class="panel">
+    <h2 id="deathText">你阵亡了</h2>
+    <p id="deathHint">观战中，回合结束后将自动复活</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var urls = [
+    'https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js',
+    'https://unpkg.com/three@0.147.0/build/three.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.147.0/three.min.js'
+  ];
+  var i = 0;
+  window.__three = new Promise(function (resolve, reject) {
+    function next() {
+      if (i >= urls.length) {
+        var el = document.getElementById('loading');
+        el.textContent = 'Three.js 加载失败，请检查网络后刷新页面。';
+        reject(new Error('three load failed'));
+        return;
+      }
+      var s = document.createElement('script');
+      s.src = urls[i++];
+      s.onload = function () { resolve(window.THREE); };
+      s.onerror = next;
+      document.head.appendChild(s);
+    }
+    next();
+  });
+})();
+</script>
+
+<script src="js/textures.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/map.js"></script>
+<script src="js/weapons.js"></script>
+<script src="js/player.js"></script>
+<script src="js/bots.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
