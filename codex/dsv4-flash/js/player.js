@@ -125,7 +125,7 @@ Player.prototype.update = function (dt, camera) {
   var moving = false;
   if (canMove) {
     var fwd = { x: -Math.sin(this.yaw), z: -Math.cos(this.yaw) };
-    var right = { x: -Math.cos(this.yaw), z: Math.sin(this.yaw) };
+    var right = { x: -fwd.z, z: fwd.x };
     var ix = 0, iz = 0;
     if (CS.input.fwd) { ix += fwd.x; iz += fwd.z; }
     if (CS.input.back) { ix -= fwd.x; iz -= fwd.z; }
@@ -296,7 +296,7 @@ Player.prototype.tryFire = function (THREE, raycaster, bots) {
 
 Player.prototype.hitscan = function (THREE, raycaster, bots, range, spread) {
   var fwd = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(camera.rotation.x, camera.rotation.y, camera.rotation.z, 'YXZ'));
-  var right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), fwd).normalize();
+  var right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
   var up = new THREE.Vector3().crossVectors(right, fwd).normalize();
   var dir = fwd.clone();
   if (spread > 0) {
@@ -364,7 +364,7 @@ Player.prototype.die = function (attacker, part) {
 
 Player.prototype.muzzlePos = function () {
   var fwd = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(camera.rotation.x, camera.rotation.y, camera.rotation.z, 'YXZ'));
-  var right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), fwd).normalize();
+  var right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
   var origin = camera.getWorldPosition(new THREE.Vector3());
   return origin.clone().add(fwd.multiplyScalar(0.55)).add(right.multiplyScalar(0.24)).add(new THREE.Vector3(0, -0.1, 0));
 };
