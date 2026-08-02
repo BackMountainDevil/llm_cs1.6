@@ -108,7 +108,7 @@
     <div>击杀 <b id="kills">0</b></div>
     <div>死亡 <b id="deaths">0</b></div>
   </div>
-  <div id="helpHint">按 B 打开购买菜单 | 1/2/3 切换武器 | R 换弹 | 右键瞄准 | TAB 计分板</div>
+  <div id="helpHint">WASD 移动 | 空格 跳跃 | B 购买菜单 | 1/2/3 武器 | R 换弹 | 右键瞄准 | TAB 计分板</div>
 </div>
 
 <canvas id="overlay"></canvas>
@@ -157,6 +157,10 @@ var MAP_W = 64, MAP_H = 48;
 var FOV = 66 * Math.PI/180;
 var TANHALF = Math.tan(FOV/2);
 var BOB_OFFSET = 30;
+var EYE = 1.0;      // 站姿眼睛高度(格)
+var CEIL_H = 3.0;   // 墙壁高度(格)，天花板更高更开阔
+var JUMP_V = 3.8;   // 起跳初速度(格/秒)
+var GRAV = 10;      // 重力(格/秒^2)
 
 /* ============================ 状态 ============================ */
 var state = {
@@ -178,7 +182,8 @@ var player = {
   bobPhase:0, footT:0, moving:false,
   hitFlash:0, hurtFlash:0, hitDir:0,
   dead:false, deadT:0, respawnT:0,
-  zoom:1
+  zoom:1,
+  z:0, vy:0, wasSpace:false
 };
 
 var enemies = [];
@@ -283,6 +288,7 @@ function genTextures(){
     c.fillStyle='#c8c8c8';
     c.fillRect(31,8,2,2); c.fillRect(31,24,2,2); c.fillRect(31,40,2,2);
   });
+  wallTexs[5] = wallTexs[2];
   wallTexs[3] = makeTex(function(c){
     c.fillStyle='#8b909b'; c.fillRect(0,0,64,64);
     speckle(c,'#7d828d',220); speckle(c,'#979ca6',180);
@@ -530,11 +536,27 @@ function buildMap(){
   ];
   for(var i=0;i<crates.length;i++){ set(crates[i][0], crates[i][1], 2); }
   set(31,19,4); set(32,19,4); set(31,28,4); set(32,28,4);
+
+  var lowCrates = [
+    [28,21],[29,21],[34,21],[35,21],
+    [28,28],[29,28],[34,28],[35,28],
+    [20,13],[21,13],[42,13],[43,13],
+    [20,34],[21,34],[42,34],[43,34],
+    [13,20],[13,27],[50,20],[50,27]
+  ];
+  for(var j=0;j<lowCrates.length;j++){ set(lowCrates[j][0], lowCrates[j][1], 5); }
   map = m;
 }
 
-/* ============================ 碰撞 ============================ */
-function circleHitsWall(x,y,r){
+/* ============================ 高度与碰撞 ============================ */
+function tileH(gx,gy){
+  var t = map[gx][gy];
+  if(t===5) return 0.5;
+  if(t===2) return 1.0;
+  return CEIL_H;
+}
+function groundUnder(x,y,r){
+  var gz = 0;
   var minX=Math.floor((x-r)/TILE), maxX=Math.floor((x+r)/TILE);
   var minY=Math.floor((y-r)/TILE), maxY=Math.floor((y+r)/TILE);
   if(minX<0) minX=0; if(maxX>=MAP_W) maxX=MAP_W-1;
@@ -542,6 +564,22 @@ function circleHitsWall(x,y,r){
   for(var gx=minX;gx<=maxX;gx++){
     for(var gy=minY;gy<=maxY;gy++){
       if(map[gx][gy]>0){
+        var h=tileH(gx,gy);
+        if(h>gz) gz=h;
+      }
+    }
+  }
+  return gz;
+}
+function circleHitsWall(x,y,r,groundZ){
+  groundZ = groundZ||0;
+  var minX=Math.floor((x-r)/TILE), maxX=Math.floor((x+r)/TILE);
+  var minY=Math.floor((y-r)/TILE), maxY=Math.floor((y+r)/TILE);
+  if(minX<0) minX=0; if(maxX>=MAP_W) maxX=MAP_W-1;
+  if(minY<0) minY=0; if(maxY>=MAP_H) maxY=MAP_H-1;
+  for(var gx=minX;gx<=maxX;gx++){
+    for(var gy=minY;gy<=maxY;gy++){
+      if(map[gx][gy]>0 && tileH(gx,gy) > groundZ){
         var cx=clamp(x, gx*TILE, (gx+1)*TILE);
         var cy=clamp(y, gy*TILE, (gy+1)*TILE);
         var dx=x-cx, dy=y-cy;
@@ -551,15 +589,16 @@ function circleHitsWall(x,y,r){
   }
   return false;
 }
-function tryMove(x,y,vx,vy,r,dt){
+function tryMove(x,y,vx,vy,r,dt,groundZ){
   var nx=x, ny=y;
   var px = x + vx*dt;
-  if(!circleHitsWall(px, y, r)) nx = px;
+  if(!circleHitsWall(px, y, r, groundZ)) nx = px;
   var py = y + vy*dt;
-  if(!circleHitsWall(x, py, r)) ny = py;
+  if(!circleHitsWall(x, py, r, groundZ)) ny = py;
   return {x:nx, y:ny, blocked:(nx===x&&ny===y)};
 }
-function rayHitsWall(x0,y0,x1,y1){
+function rayHitsWall(x0,y0,x1,y1,eyeLevel){
+  eyeLevel = eyeLevel || EYE;
   var dist = Math.hypot(x1-x0, y1-y0);
   var n = Math.ceil(dist/TILE)*2 + 1;
   for(var i=0;i<=n;i++){
@@ -567,11 +606,12 @@ function rayHitsWall(x0,y0,x1,y1){
     var wx=x0+(x1-x0)*t, wy=y0+(y1-y0)*t;
     var gx=Math.floor(wx/TILE), gy=Math.floor(wy/TILE);
     if(gx<0||gx>=MAP_W||gy<0||gy>=MAP_H) return true;
-    if(map[gx][gy]>0) return true;
+    if(map[gx][gy]>0 && tileH(gx,gy) >= eyeLevel) return true;
   }
   return false;
 }
-function castDist(ang){
+function castDist(ang, eyeLevel){
+  eyeLevel = eyeLevel===undefined ? EYE : eyeLevel;
   var rdx=Math.cos(ang), rdy=Math.sin(ang);
   var posX=player.x/TILE, posY=player.y/TILE;
   var mapX=Math.floor(posX), mapY=Math.floor(posY);
@@ -584,7 +624,7 @@ function castDist(ang){
   while(guard++<256){
     if(sdx<sdy){ sdx+=ddx; mapX+=stepX; } else { sdy+=ddy; mapY+=stepY; }
     if(mapX<0||mapX>=MAP_W||mapY<0||mapY>=MAP_H) break;
-    if(map[mapX][mapY]>0) break;
+    if(map[mapX][mapY]>0 && tileH(mapX,mapY) >= eyeLevel) break;
   }
   var perp = sdx<sdy ? (sdx-ddx) : (sdy-ddy);
   return perp;
@@ -764,6 +804,9 @@ function respawnPlayer(){
   player.y = PLAYER_SPAWN.y;
   player.ang = Math.PI;
   player.pitch = 0;
+  player.z = 0;
+  player.vy = 0;
+  player.wasSpace = false;
   player.hp = 100;
   player.invuln = 2;
   player.dead = false;
@@ -812,8 +855,20 @@ function updatePlayer(dt){
   var len = Math.hypot(mx,my);
   player.moving = len>0.1;
   if(len>0.1){ mx/=len; my/=len; }
-  var mv = tryMove(player.x, player.y, mx*speed, my*speed, 12, dt);
+  var mv = tryMove(player.x, player.y, mx*speed, my*speed, 12, dt, player.z);
   player.x = mv.x; player.y = mv.y;
+
+  // 跳跃/重力/落地
+  var gz = groundUnder(player.x, player.y, 12);
+  if(player.z <= gz + 0.001 && player.vy <= 0){
+    player.z = gz;
+    player.vy = 0;
+    if(keys.Space && !player.wasSpace) player.vy = JUMP_V;
+  }
+  player.wasSpace = keys.Space;
+  player.vy -= GRAV*dt;
+  player.z += player.vy*dt;
+  if(player.z <= gz && player.vy <= 0){ player.z = gz; player.vy = 0; }
 
   // 走路晃动/脚步声
   var moveLen = len;
@@ -901,7 +956,7 @@ function fireWeapon(){
   var halfW = 0.35*TILE;
   for(var p=0;p<pellets;p++){
     var a = player.ang + (Math.random()-0.5)*player.spread;
-    var wallD = castDist(a);
+    var wallD = castDist(a, player.z + EYE);
     var wallPX = player.x + Math.cos(a)*wallD*TILE;
     var wallPY = player.y + Math.sin(a)*wallD*TILE;
     var best=null;
@@ -1010,6 +1065,7 @@ function render(){
   var zf = player.zoom;
   var planeX=-dirY*TANHALF*zf, planeY=dirX*TANHALF*zf;
   var fArr=floorTexArr.arr, cArr=ceilTexArr.arr;
+  var eyeZ = player.z + EYE;
 
   var y, x;
   var rayDX0 = dirX - planeX, rayDY0 = dirY - planeY;
@@ -1018,7 +1074,7 @@ function render(){
   for(y=0;y<H;y++){
     var p = y - halfH;
     if(p===0) p=0.0001;
-    var rowDist = halfH / Math.abs(p);
+    var rowDist = p>0 ? (eyeZ * halfH / p) : (halfH / -p);
     var stepX = rowDist * (rayDX1 - rayDX0) / W;
     var stepY = rowDist * (rayDY1 - rayDY0) / W;
     var fx = posX + rowDist * rayDX0;
@@ -1035,7 +1091,8 @@ function render(){
     }
   }
 
-  // 墙体
+  // 墙体/箱子（带高度，矮箱上方能看到后方场景）
+  var hits = [];
   for(x=0;x<W;x++){
     var camX = 2*x/W - 1;
     var rdx = dirX + planeX*camX;
@@ -1046,36 +1103,85 @@ function render(){
     var stepX, stepY, sdx, sdy;
     if(rdx<0){ stepX=-1; sdx=(posX-mapX)*ddx; } else { stepX=1; sdx=(mapX+1-posX)*ddx; }
     if(rdy<0){ stepY=-1; sdy=(posY-mapY)*ddy; } else { stepY=1; sdy=(mapY+1-posY)*ddy; }
-    var side=0, tile=0, guard=0;
-    while(guard++<256){
-      if(sdx<sdy){ sdx+=ddx; mapX+=stepX; side=0; } else { sdy+=ddy; mapY+=stepY; side=1; }
-      if(mapX<0||mapX>=MAP_W||mapY<0||mapY>=MAP_H){ break; }
-      tile=map[mapX][mapY];
-      if(tile>0) break;
+    var side=0, guard=0, perp=0;
+    hits.length = 0;
+    while(guard++<512){
+      if(sdx<sdy){ sdx+=ddx; mapX+=stepX; side=0; perp=sdx-ddx; }
+      else { sdy+=ddy; mapY+=stepY; side=1; perp=sdy-ddy; }
+      if(mapX<0||mapX>=MAP_W||mapY<0||mapY>=MAP_H) break;
+      if(perp>100) break;
+      if(map[mapX][mapY]>0){
+        hits.push({perp:perp, side:side, tile:map[mapX][mapY], gx:mapX, gy:mapY});
+        if(tileH(mapX,mapY) >= CEIL_H) break;
+        if(hits.length >= 24) break;
+      }
     }
-    var perp = side===0 ? (sdx-ddx) : (sdy-ddy);
-    if(perp<0.01) perp=0.01;
-    zbuf[x]=perp;
-    var tex = wallTexs[tile] || wallTexs[1];
-    var arr = tex.arr;
-    var wallX = side===0 ? posY + perp*rdy : posX + perp*rdx;
-    wallX -= Math.floor(wallX);
-    var tx = (wallX*64)|0; if(tx>63)tx=63;
-    if((side===0 && rdx>0) || (side===1 && rdy<0)) tx = 63-tx;
-    var lineH = Math.round(H/perp);
-    var y0 = Math.floor(-lineH/2 + halfH);
-    var y1 = Math.floor( lineH/2 + halfH);
-    if(y0<0)y0=0; if(y1>=H)y1=H-1;
-    var step = 64/lineH;
-    var tyf = (y0 - halfH + lineH/2) * step;
-    var dark = side===1 ? 0.7 : 1;
-    var base = y0*W + x;
-    for(y=y0;y<=y1;y++){
-      var ci = arr[(((tyf|0)&63)<<6) + tx];
-      if(dark!==1) ci = shade(ci, dark);
-      buf[base] = ci;
-      base += W;
-      tyf += step;
+    // zbuffer：最近的满高遮挡物用于精灵遮挡（矮箱不遮挡精灵）
+    zbuf[x] = 100;
+    for(var zbi=0; zbi<hits.length; zbi++){
+      if(tileH(hits[zbi].gx, hits[zbi].gy) >= 1.0){ zbuf[x] = hits[zbi].perp; break; }
+    }
+    // 由远到近绘制，近处覆盖远处
+    hits.sort(function(a,b){ return b.perp - a.perp; });
+    var h, tex, arr, wallX, tx, dark, y0, y1, step, tyf, ci, base;
+    for(var hi=0; hi<hits.length; hi++){
+      var HIT = hits[hi];
+      h = tileH(HIT.gx, HIT.gy);
+      tex = wallTexs[HIT.tile] || wallTexs[1];
+      arr = tex.arr;
+      wallX = HIT.side===0 ? posY + HIT.perp*rdy : posX + HIT.perp*rdx;
+      wallX -= Math.floor(wallX);
+      tx = (wallX*64)|0; if(tx>63)tx=63;
+      if((HIT.side===0 && rdx>0) || (HIT.side===1 && rdy<0)) tx = 63-tx;
+      dark = HIT.side===1 ? 0.7 : 1;
+      step = 64 * HIT.perp / Math.max(0.001, halfH);
+      if(h >= CEIL_H){
+        y0 = Math.round(halfH + (eyeZ - CEIL_H) * halfH / HIT.perp);
+        y1 = Math.round(halfH + eyeZ * halfH / HIT.perp);
+        if(y0<0)y0=0; if(y1>=H)y1=H-1;
+        if(y1>y0){
+          tyf = 0;
+          base = y0*W + x;
+          for(y=y0;y<=y1;y++){
+            ci = arr[(((tyf|0)&63)<<6) + tx];
+            if(dark!==1) ci = shade(ci, dark);
+            buf[base] = ci;
+            base += W; tyf += step;
+          }
+        }
+      } else {
+        // 前脸
+        y0 = Math.round(halfH + (eyeZ - h) * halfH / HIT.perp);
+        y1 = Math.round(halfH + eyeZ * halfH / HIT.perp);
+        if(y0<0)y0=0; if(y1>=H)y1=H-1;
+        if(y1>y0){
+          tyf = 0;
+          base = y0*W + x;
+          for(y=y0;y<=y1;y++){
+            ci = arr[(((tyf|0)&63)<<6) + tx];
+            if(dark!==1) ci = shade(ci, dark);
+            buf[base] = ci;
+            base += W; tyf += step;
+          }
+        }
+        // 顶面（眼睛高于箱顶时可见）
+        if(eyeZ > h){
+          var backP = HIT.perp + 1/Math.max(Math.abs(rdx), Math.abs(rdy));
+          var yt0 = Math.round(halfH + (eyeZ - h) * halfH / backP);
+          var yt1 = Math.round(halfH + (eyeZ - h) * halfH / HIT.perp);
+          if(yt0<0)yt0=0; if(yt1>=H)yt1=H-1;
+          if(yt1>yt0){
+            var span = Math.max(1, yt1-yt0);
+            base = yt0*W + x;
+            for(y=yt0;y<yt1;y++){
+              var tyt = ((y-yt0)*8/span)|0;
+              ci = arr[(((tyt&63)<<6) + tx)];
+              buf[base] = ci;
+              base += W;
+            }
+          }
+        }
+      }
     }
   }
 
@@ -1123,7 +1229,7 @@ function render(){
       var z = sp.z||0.7;
       dsy = halfH + ch*(1-z)/tryy - sh/2;
     } else {
-      dsy = halfH + ch/tryy - sh;
+      dsy = halfH + ch/tryy + player.z*halfH/tryy - sh;
     }
     var x0 = Math.max(0, Math.floor(dsx));
     var x1 = Math.min(cw-1, Math.ceil(dsx+sw));
@@ -1494,7 +1600,7 @@ document.addEventListener('keydown', function(e){
   keys[e.code] = true;
   var kc = e.code;
   if(!state.started) return;
-  if(kc==='Tab'){ e.preventDefault(); }
+  if(kc==='Tab'||kc==='Space'){ e.preventDefault(); }
   if(state.buyOpen){
     if(kc==='KeyQ'||kc==='Escape'||kc==='KeyB'){ closeBuy(); return; }
     if(kc==='Digit1'||kc==='Digit2'||kc==='Digit3'){
