@@ -168,7 +168,7 @@ var state = {
 };
 
 var player = {
-  x:0,y:0, ang:0, dirX:-1, dirY:0,
+  x:0,y:0, ang:0, pitch:0, dirX:-1, dirY:0,
   hp:100, armor:0, hasHelm:false, invuln:0,
   weaponSlot:1, lastSlot:0,
   weapons:{0:'knife',1:'usp'},
@@ -763,6 +763,7 @@ function respawnPlayer(){
   player.x = PLAYER_SPAWN.x;
   player.y = PLAYER_SPAWN.y;
   player.ang = Math.PI;
+  player.pitch = 0;
   player.hp = 100;
   player.invuln = 2;
   player.dead = false;
@@ -874,7 +875,7 @@ function fireWeapon(){
       var d=Math.hypot(e.x-player.x, e.y-player.y);
       if(d > w.range*TILE) continue;
       var rel = wrapAngle(Math.atan2(e.y-player.y, e.x-player.x) - player.ang);
-      if(Math.abs(rel) < 1.1){
+      if(Math.abs(rel) < 0.7){
         e.hp -= w.dmg;
         e.hurtFlash = 1;
         spawnBlood(e.x, e.y, false);
@@ -897,6 +898,7 @@ function fireWeapon(){
   sfxShot(w);
 
   var pellets = w.pellets||1;
+  var halfW = 0.35*TILE;
   for(var p=0;p<pellets;p++){
     var a = player.ang + (Math.random()-0.5)*player.spread;
     var wallD = castDist(a);
@@ -909,13 +911,13 @@ function fireWeapon(){
       var d = Math.hypot(e.x-player.x, e.y-player.y);
       if(d > w.range || d > wallD*TILE) continue;
       var rel = wrapAngle(Math.atan2(e.y-player.y, e.x-player.x) - a);
-      var angHalf = Math.atan(0.5/d);
+      var angHalf = Math.atan(halfW/d);
       if(Math.abs(rel) < angHalf){
         if(!best || d<best.d) best={e:e,d:d,rel:rel};
       }
     }
     if(best){
-      var head = Math.abs(best.rel) < Math.atan(0.5/best.d)*0.4;
+      var head = Math.abs(best.rel) < Math.atan(halfW/best.d)*0.4;
       var dmg = w.dmg * (head?w.headx:1) * (1 - 0.4*Math.min(1, best.d/25));
       best.e.hp -= dmg;
       best.e.hurtFlash = 1;
@@ -989,7 +991,7 @@ function resize(){
   var capW=1280, capH=820;
   if(w>capW){ w=capW; h=Math.round(capW/a); }
   if(h>capH){ h=capH; w=Math.round(capH*a); }
-  viewW=w; viewH=h; renderH=h + BOB_OFFSET*2;
+  viewW=w; viewH=h; BOB_OFFSET = Math.round(h*0.13) + 20; renderH = h + BOB_OFFSET*2;
   viewCtx.canvas.width=w; viewCtx.canvas.height=h;
   off.width=w; off.height=renderH;
   renderImg = new ImageData(w, renderH);
@@ -1469,6 +1471,7 @@ document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
 document.addEventListener('mousemove', function(e){
   if(document.pointerLockElement){
     player.ang += e.movementX * 0.0023;
+    player.pitch = clamp(player.pitch + e.movementY * 0.0022, -1, 1);
   }
 });
 document.addEventListener('mousedown', function(e){
@@ -1590,7 +1593,8 @@ function frame(now){
   var shakeX = (Math.random()-0.5)*state.shake*6;
   var shakeY = (Math.random()-0.5)*state.shake*6;
   state.shake = Math.max(0, state.shake - dt*2);
-  var destY = (bob + shakeY) - BOB_OFFSET;
+  var pitchShift = -player.pitch * (BOB_OFFSET - 8);
+  var destY = clamp((bob + shakeY) + pitchShift - BOB_OFFSET, -2*BOB_OFFSET+2, -2);
   viewCtx.clearRect(0,0,viewW,viewH);
   viewCtx.drawImage(off, shakeX, destY);
   drawViewmodel();
