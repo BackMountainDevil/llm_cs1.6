@@ -302,15 +302,28 @@ function genTextures(){
     c.fillStyle='#83898f'; c.fillRect(7,7,2,2); c.fillRect(53,7,2,2); c.fillRect(7,29,2,2); c.fillRect(53,29,2,2); c.fillRect(7,51,2,2); c.fillRect(53,51,2,2);
   });
   floorTexArr = makeTex(function(c){
-    c.fillStyle='#c7b48b'; c.fillRect(0,0,64,64);
-    speckle(c,'#b9a57c',300); speckle(c,'#d4c29a',240); speckle(c,'#a08a60',140);
-    c.fillStyle='rgba(90,75,50,.18)';
-    for(var i=0;i<8;i++){ var x=Math.random()*64, y=Math.random()*64; c.fillRect(x,y,6,1); }
+    c.fillStyle='#8a5740'; c.fillRect(0,0,64,64);
+    speckle(c,'#7a4934',260); speckle(c,'#96634a',240); speckle(c,'#643823',160);
+    c.fillStyle='rgba(55,30,18,.45)';
+    c.fillRect(0,0,64,2); c.fillRect(0,32,64,2); c.fillRect(0,0,2,64); c.fillRect(32,0,2,64);
+    c.fillStyle='rgba(190,140,95,.28)';
+    for(var i=0;i<10;i++){ var x=Math.random()*64, y=Math.random()*64; c.fillRect(x,y,3,1); }
   });
   ceilTexArr = makeTex(function(c){
-    c.fillStyle='#989da3'; c.fillRect(0,0,64,64);
-    speckle(c,'#8d9299',260); speckle(c,'#a4a9af',200);
-    c.fillStyle='rgba(60,65,72,.4)'; c.fillRect(0,0,64,2); c.fillRect(0,32,64,2);
+    var g=c.createLinearGradient(0,0,0,64);
+    g.addColorStop(0,'#4f9fdf');
+    g.addColorStop(0.5,'#8ecbf2');
+    g.addColorStop(1,'#c9e9fb');
+    c.fillStyle=g; c.fillRect(0,0,64,64);
+    c.globalAlpha = 0.92;
+    for(var i=0;i<7;i++){
+      var x=Math.random()*56+4, y=Math.random()*52+4, rx=5+Math.random()*10, ry=3+Math.random()*5;
+      c.fillStyle='#ffffff';
+      c.beginPath(); c.ellipse(x,y,rx,ry,0,0,Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(x-rx*0.5,y+ry*0.4,rx*0.7,ry*0.8,0,0,Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(x+rx*0.5,y+ry*0.5,rx*0.6,ry*0.7,0,0,Math.PI*2); c.fill();
+    }
+    c.globalAlpha = 1;
   });
   solidTex = makeTex(function(c){ c.fillStyle='#111'; c.fillRect(0,0,64,64); });
 
@@ -994,7 +1007,7 @@ function render(){
   var dirX=Math.cos(player.ang), dirY=Math.sin(player.ang);
   var zf = player.zoom;
   var planeX=-dirY*TANHALF*zf, planeY=dirX*TANHALF*zf;
-  var fArr=floorTexArr, cArr=ceilTexArr;
+  var fArr=floorTexArr.arr, cArr=ceilTexArr.arr;
 
   var y, x;
   var rayDX0 = dirX - planeX, rayDY0 = dirY - planeY;
@@ -1077,7 +1090,7 @@ function render(){
       sprites.push({x:e.x, y:e.y, img:img, hF:0.16, vF:0.16, alpha:clamp(1-e.deadT*0.7,0,1), hurt:e.hurtFlash, scale:e.scale, hp:null});
     } else {
       img = enemyImgs[e.variant][e.walkFrame];
-      sprites.push({x:e.x, y:e.y, img:img, hF:e.scale, vF:e.scale, alpha:1, hurt:e.hurtFlash, scale:e.scale, hp:e.hp/e.maxHp, maxHp:e.maxHp});
+      sprites.push({x:e.x, y:e.y, img:img, hF:e.scale*1.14, vF:e.scale, alpha:1, hurt:e.hurtFlash, scale:e.scale, hp:e.hp/e.maxHp, maxHp:e.maxHp});
     }
   }
   for(i=0;i<particles.length;i++){
@@ -1095,22 +1108,21 @@ function render(){
   var cw=W, ch=H;
   for(i=0;i<sprites.length;i++){
     var sp=sprites[i];
-    var rx=sp.x-player.x, ry=sp.y-player.y;
+    var rx=(sp.x-player.x)/TILE, ry=(sp.y-player.y)/TILE;
     var trx = invDet*(dirY*rx - dirX*ry);
     var tryy = invDet*(-planeY*rx + planeX*ry);
     if(tryy<=0.1) continue;
     var sx = (cw/2)*(1+trx/tryy);
-    var sy;
-    if(sp.world){
-      var z = sp.z||0.7;
-      sy = halfH - (z/tryy)*ch;
-    } else {
-      sy = halfH;
-    }
     var sh = Math.abs(ch/tryy) * sp.hF;
     var sw = sh * (sp.img.width/sp.img.height);
     var dsx = sx - sw/2;
-    var dsy = sy - sh;
+    var dsy;
+    if(sp.world){
+      var z = sp.z||0.7;
+      dsy = halfH + ch*(1-z)/tryy - sh/2;
+    } else {
+      dsy = halfH + ch/tryy - sh;
+    }
     var x0 = Math.max(0, Math.floor(dsx));
     var x1 = Math.min(cw-1, Math.ceil(dsx+sw));
     offCtx.save();
@@ -1138,12 +1150,12 @@ function render(){
   offCtx.lineWidth = 1;
   for(i=0;i<tracers.length;i++){
     var t=tracers[i];
-    var rx2=t.wx-player.x, ry2=t.wy-player.y;
+    var rx2=(t.wx-player.x)/TILE, ry2=(t.wy-player.y)/TILE;
     var trx2 = invDet*(dirY*rx2 - dirX*ry2);
     var try2 = invDet*(-planeY*rx2 + planeX*ry2);
     if(try2<=0.1) continue;
     var ex = (cw/2)*(1+trx2/try2);
-    var ey = halfH - (1/try2)*ch;
+    var ey = halfH + ch/try2;
     var a2 = Math.min(1, 1-t.t/t.life);
     offCtx.globalAlpha = a2;
     offCtx.beginPath();
