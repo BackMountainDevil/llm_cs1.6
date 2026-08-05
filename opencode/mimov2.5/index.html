@@ -78,7 +78,24 @@
         <div id="start-screen">
             <h1>CS 1.6 WEB</h1>
             <p class="subtitle">Browser Edition</p>
-            <p class="instruction">Click to start - Mouse to aim - WASD to move</p>
+            <p class="instruction">Mouse to aim - WASD to move</p>
+
+            <div id="map-select">
+                <h3>SELECT MAP</h3>
+                <div id="map-options">
+                    <div class="map-option selected" data-map="dust">
+                        <div class="map-thumb dust-thumb"></div>
+                        <span>Dust Slope</span>
+                        <small>经典斜坡 / 开阔交战</small>
+                    </div>
+                    <div class="map-option" data-map="bridge">
+                        <div class="map-thumb bridge-thumb"></div>
+                        <span>Bridge City</span>
+                        <small>桥梁阶梯 / 立体战术</small>
+                    </div>
+                </div>
+            </div>
+
             <div id="team-select">
                 <button id="select-t">JOIN TERRORISTS</button>
                 <button id="select-ct">JOIN COUNTER-TERRORISTS</button>

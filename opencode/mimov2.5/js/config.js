@@ -35,8 +35,8 @@ export const CONFIG = {
     },
 
     bombSites: {
-        A: { x: 10, y: 0.5, z: 18 },
-        B: { x: -10, y: 0.5, z: -18 }
+        A: { x: 20, y: 0.5, z: 0 },
+        B: { x: -20, y: 0.5, z: 0 }
     }
 };
 

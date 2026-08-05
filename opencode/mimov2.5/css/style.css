@@ -344,6 +344,71 @@ body {
     margin-top: 10px;
 }
 
+#map-select {
+    margin-bottom: 25px;
+}
+
+#map-select h3 {
+    color: #888;
+    font-size: 12px;
+    letter-spacing: 3px;
+    margin-bottom: 12px;
+}
+
+#map-options {
+    display: flex;
+    gap: 15px;
+}
+
+.map-option {
+    padding: 12px 20px;
+    border: 2px solid #333;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+    min-width: 150px;
+}
+
+.map-option:hover {
+    border-color: #666;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.map-option.selected {
+    border-color: #ff6600;
+    background: rgba(255, 102, 0, 0.15);
+}
+
+.map-option span {
+    display: block;
+    color: #fff;
+    font-size: 14px;
+    font-weight: bold;
+    margin-top: 8px;
+}
+
+.map-option small {
+    display: block;
+    color: #666;
+    font-size: 11px;
+    margin-top: 4px;
+}
+
+.map-thumb {
+    width: 80px;
+    height: 50px;
+    margin: 0 auto;
+    border: 1px solid #444;
+}
+
+.dust-thumb {
+    background: linear-gradient(135deg, #8b7355 30%, #4a7a3a 50%, #777 70%);
+}
+
+.bridge-thumb {
+    background: linear-gradient(135deg, #5a5a5a 20%, #888 40%, #996633 60%, #667788 80%);
+}
+
 #round-end-screen {
     position: absolute;
     top: 0;
