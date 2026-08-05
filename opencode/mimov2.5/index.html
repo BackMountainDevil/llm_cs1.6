@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS 1.6 Web</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+
+        <div id="crosshair">
+            <div class="cross-h"></div>
+            <div class="cross-v"></div>
+        </div>
+
+        <div id="hud">
+            <div id="hud-left">
+                <div id="health-display">
+                    <span class="hud-label">HP</span>
+                    <div id="health-bar-outer"><div id="health-bar-inner"></div></div>
+                    <span id="health-text">100</span>
+                </div>
+                <div id="armor-display">
+                    <span class="hud-label">AP</span>
+                    <div id="armor-bar-outer"><div id="armor-bar-inner"></div></div>
+                    <span id="armor-text">0</span>
+                </div>
+            </div>
+            <div id="hud-right">
+                <div id="ammo-display">
+                    <span id="ammo-current">30</span>
+                    <span class="hud-label">/</span>
+                    <span id="ammo-reserve">90</span>
+                </div>
+                <div id="weapon-name">Glock</div>
+                <div id="money-display">$800</div>
+            </div>
+            <div id="hud-top">
+                <div id="team-score-t">T: 0</div>
+                <div id="round-info">Round 1 | 2:00</div>
+                <div id="team-score-ct">CT: 0</div>
+            </div>
+        </div>
+
+        <div id="kill-feed"></div>
+
+        <div id="buy-menu" class="hidden">
+            <h2>BUY MENU</h2>
+            <div class="buy-section">
+                <h3>Pistols</h3>
+                <div class="buy-item" data-item="glock">$200 - [1] Glock</div>
+                <div class="buy-item" data-item="usp">$200 - [2] USP</div>
+            </div>
+            <div class="buy-section">
+                <h3>Rifles</h3>
+                <div class="buy-item" data-item="ak47">$2700 - [3] AK-47</div>
+                <div class="buy-item" data-item="m4a1">$3100 - [4] M4A1</div>
+            </div>
+            <div class="buy-section">
+                <h3>Equipment</h3>
+                <div class="buy-item" data-item="armor">$650 - [5] Kevlar Vest</div>
+            </div>
+            <div id="buy-close">Press [B] to close</div>
+        </div>
+
+        <div id="round-end-screen" class="hidden">
+            <h1 id="round-end-text"></h1>
+            <p id="round-end-score"></p>
+        </div>
+
+        <div id="death-screen" class="hidden">
+            <h1>YOU DIED</h1>
+            <p>Spectating...</p>
+        </div>
+
+        <div id="start-screen">
+            <h1>CS 1.6 WEB</h1>
+            <p class="subtitle">Browser Edition</p>
+            <p class="instruction">Click to start - Mouse to aim - WASD to move</p>
+            <div id="team-select">
+                <button id="select-t">JOIN TERRORISTS</button>
+                <button id="select-ct">JOIN COUNTER-TERRORISTS</button>
+            </div>
+            <div class="controls-hint">
+                <p>[B] Buy Menu | [R] Reload | [SPACE] Jump | [CTRL] Crouch</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+        }
+    }
+    </script>
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
