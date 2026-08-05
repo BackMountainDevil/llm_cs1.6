@@ -110,8 +110,9 @@ export class Player {
         if (!this.input.isPointerLocked) return;
 
         const md = this.input.getMouseDelta();
-        this.yaw -= md.dx * 0.002;
-        this.pitch -= md.dy * 0.002;
+        const sensitivity = 0.0015;
+        this.yaw -= md.dx * sensitivity;
+        this.pitch -= md.dy * sensitivity;
         this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch));
 
         const forward = this.input.isKeyDown('KeyW');
@@ -133,8 +134,8 @@ export class Player {
             dir.normalize();
             const cos = Math.cos(this.yaw);
             const sin = Math.sin(this.yaw);
-            const rx = dir.x * cos - dir.z * sin;
-            const rz = dir.x * sin + dir.z * cos;
+            const rx = dir.x * cos + dir.z * sin;
+            const rz = -dir.x * sin + dir.z * cos;
             dir.x = rx;
             dir.z = rz;
         }
